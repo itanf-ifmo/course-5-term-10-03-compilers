@@ -8,17 +8,20 @@ options {
 from compiler.objects import *
 }
 
+@parser::init {
+self.functions = []
+}
 @parser::members {
-functions = []
 }
 
 expr returns [v]
     : t=BOOL {$v = BoolStatement($t.text == 'true', ($t.line, $t.pos))}
-    | INT {$v = ('int', int($INT.text))}
+    | INT {$v = ConstIntStatement($INT.int, ($t.line, $t.pos))}
     | ID {$v = ('var', $ID.text)}
     | func_call {$v = ('call', $func_call.text)}
     | o=UNARY_OPERATORS e=expr {$v = UnaryOperatorStatement($o.text, $e.v, ($o.line, $o.pos))}
     | e1=expr o=OPERATORS e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
+    | '(' expr ')' {$v = $expr.v}
     ;
 
 func_call : ID '(' ( (expr ',' )* expr )? ')' {print('avaliableFs: ', $ID.pos)};

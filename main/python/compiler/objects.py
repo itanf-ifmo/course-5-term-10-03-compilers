@@ -63,12 +63,10 @@ class PrintStatement(Statement):
     def resolve(self, context):
         return [
                    'getstatic',
-                   context.constants['GET_STATIC_PRINT'][0],
-                   context.constants['GET_STATIC_PRINT'][1],
+                   context.constant_pull['System.out.PrintStream'],
                ] + self.expr.resolve(context) + [
                    'invokevirtual',
-                   context.constants['INVOKE_VIRTUAL_PRINT_INT'][0],
-                   context.constants['INVOKE_VIRTUAL_PRINT_INT'][1],
+                   context.constant_pull['println:(Z)V'] if self.expr.type == 'bool' else context.constant_pull['println:(I)V'],
                ]
 
 
@@ -128,10 +126,11 @@ class UnaryOperatorStatement(Statement):
     }
 
     def __init__(self, op, expr, position):
-        if expr.type == 'bool' and op not in self.BOOLEAN_UNARY_OPERATORS:
-            raise self.exception("Unexpected unary operator for boolean expression: {}".format(self.op))
+        super().__init__('bool' if op in self.BOOLEAN_UNARY_OPERATORS else expr.type, position)
 
-        super().__init__('unary', position)
+        if expr.type == 'bool' and op not in self.BOOLEAN_UNARY_OPERATORS:
+            raise self.exception("Unexpected unary operator for boolean expression: {}".format(op))
+
         assert isinstance(expr, Statement)
 
         self.expr = expr
@@ -145,13 +144,28 @@ class UnaryOperatorStatement(Statement):
                self.op
 
 
+class ConstIntStatement(Statement):
+    def __init__(self, i, position):
+        super().__init__('int', position)
+
+        self.i = i
+
+    def __len__(self):
+        return 3
+
+    def resolve(self, context):
+        context.constant_pull['constant_' + str(self._position)] = self.i
+
+        return [
+            'ldc_w',
+            context.constant_pull['constant_' + str(self._position)]
+        ]
+
+
 class Context:
-    def __init__(self):
+    def __init__(self, cp):
         self.vars = []
-        self.constants = {
-            'GET_STATIC_PRINT': [0x0, 0x4],
-            'INVOKE_VIRTUAL_PRINT_INT': [0x0, 0x5],
-        }
+        self.constant_pull = cp
 
     def resolveFuncCall(self):
         pass

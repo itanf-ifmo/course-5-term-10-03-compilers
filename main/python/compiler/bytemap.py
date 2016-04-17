@@ -207,132 +207,97 @@ bytecode = [
 ]
 
 
-class ByteCodeGenerator:
-    @staticmethod
-    def _generate_constant_string(s):
-        return '01{}{}'.format(format(len(s), '04x'), ''.join(format(i, '02x') for i in s.encode()))
+class ConstantPull:
+    def __init__(self):
+        self.pull = {}
 
-    def __init__(self, programName, instr):
-        self.programName = programName
-        self.instr = instr
+    def __setitem__(self, key, value):
+        if isinstance(value, str):
+            self.pull[key] = (len(self.pull), '01{}{}'.format(format(len(value), '04x'), ''.join(format(i, '02x') for i in value.encode())))
+            return
+
+        if isinstance(value, int):
+            self.pull[key] = (len(self.pull), '03' + format(value, '08x'))
+            return
+
+        self.pull[key] = (len(self.pull), format(value[0], '02x') + ''.join(i for i in value[1:]))
+
+    def __getitem__(self, item):
+        return format(self.pull[item][0] + 1, '04x')
+
+    def putMethodref(self, name, a, b):
+        self[name] = [0x0a, self[a], self[b]]
+
+    def putClass(self, name, a):
+        self[name] = [0x07, self[a]]
+
+    def putNameAndType(self, name, a, b):
+        self[name] = [0x0c, self[a], self[b]]
+
+    def putFieldref(self, name, a, b):
+        self[name] = [0x09, self[a], self[b]]
+
+    def __len__(self):
+        return len(self.pull) + 1
+
+    def __str__(self):
+        return ''.join(v for n, v in sorted(self.pull.values()))
+
+
+class ByteCodeGenerator:
+    def __init__(self, cp, instr):
+        self.cp = cp
+        self.seq = instr + 'b1'
+        self.max_stack = 1000
+        self.max_locals = 1
 
     def generate(self):
         code = ''
         code += 'cafe babe'  # magic
         code += '0000 0034'  # minor_version, major_version
-        code += self._generate_constant_pull()
+        code += format(len(self.cp), '04x')
+        code += str(self.cp)
         code += '0020'  # access_flags
-        code += '0006'  # this_class (link to constant)
-        code += '0007'  # super_class (link to constant)
+        code += self.cp['this class']  # this_class
+        code += self.cp['super class']  # super_class
         code += '0000'  # interfaces_count
         code += '0000'  # fields_count
-        code += '0001'  # methods_count (constructor + main)
-        code += ''
+        code += '0001'  # methods_count
 
-        code += getCode(self.instr)
+        # main method
+        code += '0009'  # mask
+        code += self.cp['main method name']
+        code += self.cp['main method type']
+        code += '0001'  # one attribute
+        code += self.cp['code section']
+        code += format(12 + len(self.seq) // 2, '08x')  # code section size
+        code += format(self.max_stack, '04x')
+        code += format(self.max_locals, '04x')
+        code += format(len(self.seq) // 2, '08x')  # code size
+        code += self.seq
+        code += '0000'  # ??
+        code += '0000'  # no attributes
+
+        code += '0000'  # class attributes_count
 
         r = code.replace('\n', '').replace(' ', '')
         return [int(i + j, 16) for i, j in list(zip(r[::2], r[1::2]))]
 
-    def _generate_constant_pull(self):
-        pull = [
-            '0a 0007 0012',
-            '09 0013 0014',
-            '0a 0015 0016',
-            '09 0013 0017',
-            '0a 0018 0019',
-            '07 001a',
-            '07 001b',
-            self._generate_constant_string('<init>'),
-            self._generate_constant_string('()V'),
-            self._generate_constant_string('Code'),
-            self._generate_constant_string('LineNumberTable'),
-            self._generate_constant_string('main'),
-            self._generate_constant_string('([Ljava/lang/String;)V'),
-            self._generate_constant_string('Exceptions'),
-            '07 001c',
-            self._generate_constant_string('SourceFile'),
-            self._generate_constant_string('A.java'),
-            '0c 0008 0009',
-            '07 001d',
-            '0c 001e 001f',
-            '07 0020',
-            '0c 0021 0022',
-            '0c 0023 0024',
-            '07 0025',
-            '0c 0026 0027',
-            self._generate_constant_string(self.programName),
-            self._generate_constant_string('java/lang/Object'),
-            self._generate_constant_string('java/io/IOException'),
-            self._generate_constant_string('java/lang/System'),
-            self._generate_constant_string('in'),
-            self._generate_constant_string('Ljava/io/InputStream;'),
-            self._generate_constant_string('java/io/InputStream'),
-            self._generate_constant_string('read'),
-            self._generate_constant_string('()I'),
-            self._generate_constant_string('out'),
-            self._generate_constant_string('Ljava/io/PrintStream;'),
-            self._generate_constant_string('java/io/PrintStream'),
-            self._generate_constant_string('println'),
-            self._generate_constant_string('(I)V'),
-        ]
-
-        code = ''
-        code += format(len(pull) + 1, '04x')  # pull size + 1
-        code += ''.join(c for c in pull)
-        return code
-
-
-def getCode(instr):
-    i = instr.replace('\n', '').replace(' ', '') + 'b1'
-    l = int(len(i) / 2)
-    # print(l, format(24 + l, '04x'), format(l, '04x'))
-
-    r = """
-0009
-000c
-000d
-0001
-    000a     %s
-        0003 0005 %s
-         %s
-        0000
-        0000
-
-0000
-
-""" % (format(12 + l, '08x'), format(l, '08x'), i)
-    return r
-
 
 toAsm = {}
-tyByte = {}
+toByte = {}
 for i, b, a in bytecode:
     toAsm[int(b, 16)] = (i, a)
-    tyByte[i] = int(b, 16)
-#
-# open('/tmp/A.class', 'bw').write(bytearray(getCode(m)))
-# os.system("cd /tmp; java A <<< 23")
-# print()
-#
-#
-# m = list(m.replace('\n', '').replace(' ', ''))
-# m = list(int(i + j, 16) for i, j in list(zip(m[::2], m[1::2])))
-# l = []
-# while m:
-#     a = m.pop(0)
-#     r = d.get(a, ('!' + str(a), 0))
-#     args = []
-#     if r[1]:
-#         for i in range(r[1]):
-#             args.append(str(hex(m.pop(0))))
-#
-#     print(hex(a), r[0], ('(' + ','.join(args) + ')' if args else ''))
+    toByte[i] = int(b, 16)
 
 
 def processAsm(seq):
-    return [tyByte.get(s, s) for s in seq]
+    for s in seq:
+        if s not in toByte:
+            yield s
+            continue
+        yield format(toByte[s], '02x')
 
 
-def compile(seq):
-    return ByteCodeGenerator('A', ''.join(format(i, '02x') for i in processAsm(seq))).generate()
+def compile(cp, seq):
+    return ByteCodeGenerator(cp, ''.join(processAsm(seq))).generate()

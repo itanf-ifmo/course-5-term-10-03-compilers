@@ -29,26 +29,47 @@ class TestStringMethods(unittest.TestCase):
     def test_empty(self):
         self.base('', '')
 
-    def test_print_true(self):
-        self.base('true >>', '1')
+    def test_true(self):
+        self.base('true >>', 'true')
 
-    def test_print_false(self):
-        self.base('false >>', '0')
+    def test_false(self):
+        self.base('false >>', 'false')
 
-    def test_print_boolean_un_op_not1(self):
-        self.base('!true >>', '0')
+    def test_boolean_un_op_not1(self):
+        self.base('!true >>', 'false')
 
-    def test_print_boolean_un_op_not2(self):
-        self.base('not true >>', '0')
+    def test_boolean_un_op_not2(self):
+        self.base('not true >>', 'false')
 
-    def test_print_boolean_un_op_not3(self):
-        self.base('! false >>', '1')
+    def test_boolean_un_op_not3(self):
+        self.base('! false >>', 'true')
 
-    def test_print_boolean_un_op_not4(self):
-        self.base('not false >>', '1')
+    def test_boolean_un_op_not4(self):
+        self.base('not false >>', 'true')
 
-    # def test_print_boolean_op_and(self):
-    #     self.base('true && true >>', '')
+    def test_not_one(self):
+        self.base('not 1 >>', 'false')
+
+    def test_not_zero(self):
+        self.base('! 0 >>', 'true')
+
+    def test_not_not_one(self):
+        self.base('! not 1 >>', 'true')
+
+    def test_one(self):
+        self.base('1 >>', '1')
+
+    def test_1123333333(self):
+        self.base('1123333333 >>', '1123333333')
+
+    def test_minus_one(self):
+        self.base('-1 >>', '-1')
+
+    def test_not_minus_one(self):
+        self.base('! -1 >>', 'true')
+
+    def test_minus_true(self):
+        self.assertRaisesRegex(Exception, 'Unexpected unary operator for boolean expression: -', compiler, '- true >>')
 
 
 if __name__ == '__main__':
