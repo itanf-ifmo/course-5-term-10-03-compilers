@@ -17,11 +17,19 @@ self.functions = []
 expr returns [v]
     : t=BOOL {$v = BoolStatement($t.text == 'true', ($t.line, $t.pos))}
     | INT {$v = ConstIntStatement($INT.int, ($t.line, $t.pos))}
-    | ID {$v = ('var', $ID.text)}
     | func_call {$v = ('call', $func_call.text)}
-    | o=UNARY_OPERATORS e=expr {$v = UnaryOperatorStatement($o.text, $e.v, ($o.line, $o.pos))}
-    | e1=expr o=OPERATORS e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
-    | '(' expr ')' {$v = $expr.v}
+    | '(' e=expr ')' {$v=$e.v}
+    | ID {$v = ('var', $ID.text)}
+
+    // operators:
+    |         o='-'                e =expr {$v = UnaryOperatorStatement($o.text, $e.v, ($o.line, $o.pos))}
+    | e1=expr o=('*'  | '/' | '%') e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
+    | e1=expr o=('+'  | '-')       e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
+    | e1=expr o=('<'  | '<='
+                |'>'  | '>=')      e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
+    |         o=('!'  | 'not')     e =expr {$v = UnaryOperatorStatement($o.text, $e.v, ($o.line, $o.pos))}
+    | e1=expr o=('&&' | 'and')     e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
+    | e1=expr o=('||' | 'or')      e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
     ;
 
 func_call : ID '(' ( (expr ',' )* expr )? ')' {print('avaliableFs: ', $ID.pos)};
@@ -81,16 +89,6 @@ BOOL : 'true' | 'false' ;
 
 COMA : ',' ;
 PASS : 'pass' ;
-UNARY_OPERATORS : '-' | '!' | 'not' ;
-
-OPERATORS
-    : '*'  | '/' | '%'
-    | '+'  | '-'
-    | '<'  | '<=' | '>' | '>='
-    | '==' | '!='
-    | '&&' | 'and'
-    | '||' | 'or'
-    ;
 
 INT : DIGIT+ ;
 ID : ALPHA (ALPHA | DIGIT)* ;

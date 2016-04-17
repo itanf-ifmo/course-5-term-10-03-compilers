@@ -213,14 +213,16 @@ class ConstantPull:
 
     def __setitem__(self, key, value):
         if isinstance(value, str):
-            self.pull[key] = (len(self.pull), '01{}{}'.format(format(len(value), '04x'), ''.join(format(i, '02x') for i in value.encode())))
-            return
+            v = '01{}{}'.format(format(len(value), '04x'), ''.join(format(i, '02x') for i in value.encode()))
+        elif isinstance(value, int):
+            v = '03' + format(value, '08x')
+        else:
+            v = format(value[0], '02x') + ''.join(i for i in value[1:])
 
-        if isinstance(value, int):
-            self.pull[key] = (len(self.pull), '03' + format(value, '08x'))
-            return
-
-        self.pull[key] = (len(self.pull), format(value[0], '02x') + ''.join(i for i in value[1:]))
+        if key in self.pull:
+            self.pull[key] = (self.pull[key][0], v)
+        else:
+            self.pull[key] = (len(self.pull), v)
 
     def __getitem__(self, item):
         return format(self.pull[item][0] + 1, '04x')

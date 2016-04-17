@@ -73,34 +73,33 @@ class PrintStatement(Statement):
 class OperatorStatement(Statement):
     BOOLEAN_OPERATORS = {'==', '!=', '&&', 'and', '||', 'or'}
     OP_TO_ASM_MAP = {
-        '*': '',  # todo
-        '/': '',
-        '%': '',
-        '+': '',
-        '-': '',
+        '*': 'imul',
+        '/': 'idiv',
+        '%': 'irem',
+        '+': 'iadd',
+        '-': 'isub',
         '<': '',
         '<=': '',
-        '>': '',
+        '>': '',  # todo
         '>=': '',
         '==': '',
         '!=': '',
-        '&&': '',
-        'and': '',
-        '||': '',
-        'or': '',
+        '&&': 'iand',
+        'and': 'iand',
+        '||': 'ior',
+        'or': 'ior',
     }
 
     def __init__(self, expr1, op, expr2, position):
+        super().__init__('bool' if op in self.BOOLEAN_OPERATORS else expr1.type, position)
+        assert isinstance(expr1, Statement)
+        assert isinstance(expr2, Statement)
 
-        if expr1.type != expr2.type:
-            raise self.exception("Type of operand mismatches: {} {} {}".format(expr1, op, expr2))
+        if expr1.type != expr2.type and op not in self.BOOLEAN_OPERATORS:
+            raise self.exception("Type of operand mismatches: {} {} {}".format(expr1.type, op, expr2.type))
 
         if expr1.type == 'bool' and op not in self.BOOLEAN_OPERATORS:
             raise self.exception("Unexpected operator for boolean parameters: {}".format(op))
-
-        super().__init__(expr1.type, position)
-        assert isinstance(expr1, Statement)
-        assert isinstance(expr2, Statement)
 
         self.expr1 = expr1
         self.expr2 = expr2
@@ -114,7 +113,7 @@ class OperatorStatement(Statement):
     def resolve(self, context):
         return self.expr1.resolve(context) + \
                self.expr2.resolve(context) + \
-               self.op
+               [self.op]
 
 
 class UnaryOperatorStatement(Statement):
@@ -154,11 +153,11 @@ class ConstIntStatement(Statement):
         return 3
 
     def resolve(self, context):
-        context.constant_pull['constant_' + str(self._position)] = self.i
+        context.constant_pull['constant_' + str(self.i)] = self.i
 
         return [
             'ldc_w',
-            context.constant_pull['constant_' + str(self._position)]
+            context.constant_pull['constant_' + str(self.i)]
         ]
 
 

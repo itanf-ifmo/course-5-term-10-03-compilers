@@ -80,6 +80,5 @@ def compiler(source):
     # put globals initialization to code
 
     seq = list(itertools.chain(*[i.resolve(c) for i in s]))
-    # print(seq)
     byte_code = bytemap.compile(cp, seq)
     return bytearray(byte_code)
