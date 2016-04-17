@@ -72,33 +72,36 @@ class PrintStatement(Statement):
 
 class OperatorStatement(Statement):
     BOOLEAN_OPERATORS = {'==', '!=', '&&', 'and', '||', 'or'}
+    RETURNS_BOOLEAN = {'==', '!=', '&&', 'and', '||', 'or', '<', '<=', '>', '>='}
     OP_TO_ASM_MAP = {
-        '*': 'imul',
-        '/': 'idiv',
-        '%': 'irem',
-        '+': 'iadd',
-        '-': 'isub',
-        '<': '',
-        '<=': '',
-        '>': '',  # todo
-        '>=': '',
-        '==': '',
-        '!=': '',
-        '&&': 'iand',
-        'and': 'iand',
-        '||': 'ior',
-        'or': 'ior',
+        '*': ['imul'],
+        '/': ['idiv'],
+        '%': ['irem'],
+        '+': ['iadd'],
+        '-': ['isub'],
+
+        '<':  ['if_icmplt', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
+        '<=': ['if_icmple', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
+        '>':  ['if_icmpgt', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
+        '>=': ['if_icmpge', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
+        '==': ['if_icmpeq', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
+        '!=': ['if_icmpne', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
+
+        '&&': ['iand'],
+        'and': ['iand'],
+        '||': ['ior'],
+        'or': ['ior'],
     }
 
     def __init__(self, expr1, op, expr2, position):
-        super().__init__('bool' if op in self.BOOLEAN_OPERATORS else expr1.type, position)
+        super().__init__('bool' if op in self.RETURNS_BOOLEAN else expr1.type, position)
         assert isinstance(expr1, Statement)
         assert isinstance(expr2, Statement)
 
         if expr1.type != expr2.type and op not in self.BOOLEAN_OPERATORS:
             raise self.exception("Type of operand mismatches: {} {} {}".format(expr1.type, op, expr2.type))
 
-        if expr1.type == 'bool' and op not in self.BOOLEAN_OPERATORS:
+        if expr1.type == 'bool' and op not in self.RETURNS_BOOLEAN:
             raise self.exception("Unexpected operator for boolean parameters: {}".format(op))
 
         self.expr1 = expr1
@@ -107,13 +110,14 @@ class OperatorStatement(Statement):
         self.op = self.OP_TO_ASM_MAP[op]
 
     def __len__(self):
-        return len(self.expr1) + 1 + len(self.expr1)
+        return len(self.expr1) + len(self.op) + len(self.expr1)
 
     # noinspection PyTypeChecker
     def resolve(self, context):
+        # return self.op
         return self.expr1.resolve(context) + \
                self.expr2.resolve(context) + \
-               [self.op]
+               self.op
 
 
 class UnaryOperatorStatement(Statement):

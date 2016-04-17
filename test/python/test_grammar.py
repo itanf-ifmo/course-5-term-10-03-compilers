@@ -20,6 +20,7 @@ def test(byte_code, stdin=None):
     return o.decode("utf-8").strip(), e.decode("utf-8").strip(), p.returncode
 
 
+# @unittest.skip("demonstrating skipping")
 class TestBooleans(unittest.TestCase):
     def base(self, src, expected_output):
         stdout, stderr, rc = test(compiler(src))
@@ -121,6 +122,7 @@ class TestBooleans(unittest.TestCase):
         self.assertRaisesRegex(Exception, 'Unexpected operator for boolean parameters: +', compiler, 'true + true >>')
 
 
+# @unittest.skip("demonstrating skipping")
 class TestBasics(unittest.TestCase):
     def base(self, src, expected_output):
         stdout, stderr, rc = test(compiler(src))
@@ -132,6 +134,7 @@ class TestBasics(unittest.TestCase):
         self.base('', '')
 
 
+# @unittest.skip("demonstrating skipping")
 class TestNumbers(unittest.TestCase):
     def base(self, src, expected_output):
         stdout, stderr, rc = test(compiler(src))
@@ -205,6 +208,58 @@ class TestNumbers(unittest.TestCase):
     def test_three_remainder_two(self):
         self.base('3 % 2 >>', '1')
 
+
+class TestComparison(unittest.TestCase):
+    def base(self, src, expected_output):
+        stdout, stderr, rc = test(compiler(src))
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual(expected_output, stdout)
+
+    def test_one_lt_two(self):
+        self.base('1 < 2 >>', 'true')
+
+    def test_one_le_two(self):
+        self.base('1 <= 2 >>', 'true')
+
+    def test_one_gt_two(self):
+        self.base('1 > 2 >>', 'false')
+
+    def test_one_ge_two(self):
+        self.base('1 >= 2 >>', 'false')
+
+    def test_one_ne_two(self):
+        self.base('1 != 2 >>', 'true')
+
+    def test_one_eq_two(self):
+        self.base('1 == 2 >>', 'false')
+
+    def test_two_eq_two(self):
+        self.base('2 == 2 >>', 'true')
+
+    def test_two_ne_two(self):
+        self.base('2 != 2 >>', 'false')
+
+    def test_true_eq_true(self):
+        self.base('true == true >>', 'true')
+
+    def test_true_eq_false(self):
+        self.base('true == false >>', 'false')
+
+    def test_two_lt_two(self):
+        self.base('2 < 2 >>', 'false')
+
+    def test_two_le_two(self):
+        self.base('2 <= 2 >>', 'true')
+
+    def test_true_le_two(self):
+        self.assertRaisesRegex(Exception, 'Type of operand mismatches: bool <= int', compiler, 'true <= 2 >>')
+
+    def test_true_le_true(self):
+        self.base('true <= true >>', 'true')
+
+    def test_false_lt_true(self):
+        self.base('false <= true >>', 'true')
 
 if __name__ == '__main__':
     unittest.main()

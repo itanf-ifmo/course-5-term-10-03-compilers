@@ -24,6 +24,7 @@ def compiler(source):
 
     cp = ConstantPull()
     cp['code section'] = 'Code'
+    cp['StackMapTable section'] = 'StackMapTable'
     cp['this class name'] = 'A'
     cp['super class name'] = 'java/lang/Object'
     cp.putClass('this class', 'this class name')

@@ -251,12 +251,13 @@ class ByteCodeGenerator:
         self.cp = cp
         self.seq = instr + 'b1'
         self.max_stack = 1000
-        self.max_locals = 1
+        self.max_locals = 10  # todo
 
     def generate(self):
         code = ''
-        code += 'cafe babe'  # magic
-        code += '0000 0034'  # minor_version, major_version
+        code += 'cafebabe'  # magic
+        code += '0000002f'  # minor_version, major_version
+        # code += '0000 0034'  # minor_version, major_version
         code += format(len(self.cp), '04x')
         code += str(self.cp)
         code += '0020'  # access_flags
@@ -272,18 +273,22 @@ class ByteCodeGenerator:
         code += self.cp['main method type']
         code += '0001'  # one attribute
         code += self.cp['code section']
-        code += format(12 + len(self.seq) // 2, '08x')  # code section size
-        code += format(self.max_stack, '04x')
-        code += format(self.max_locals, '04x')
-        code += format(len(self.seq) // 2, '08x')  # code size
-        code += self.seq
-        code += '0000'  # ??
-        code += '0000'  # no attributes
+        code += self._generate_code_section()
 
         code += '0000'  # class attributes_count
 
-        r = code.replace('\n', '').replace(' ', '')
-        return [int(i + j, 16) for i, j in list(zip(r[::2], r[1::2]))]
+        return [int(i + j, 16) for i, j in list(zip(code[::2], code[1::2]))]
+
+    def _generate_code_section(self):
+        code_section = ''
+        code_section += format(self.max_stack, '04x')
+        code_section += format(self.max_locals, '04x')
+        code_section += format(len(self.seq) // 2, '08x')  # code size
+        code_section += self.seq
+        code_section += '0000'  # ??
+        code_section += '0000'  # no attributes
+
+        return format(len(code_section) // 2, '08x') + code_section
 
 
 toAsm = {}

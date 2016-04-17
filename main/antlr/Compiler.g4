@@ -27,6 +27,7 @@ expr returns [v]
     | e1=expr o=('+'  | '-')       e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
     | e1=expr o=('<'  | '<='
                 |'>'  | '>=')      e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
+    | e1=expr o=('==' | '!=')      e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
     |         o=('!'  | 'not')     e =expr {$v = UnaryOperatorStatement($o.text, $e.v, ($o.line, $o.pos))}
     | e1=expr o=('&&' | 'and')     e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
     | e1=expr o=('||' | 'or')      e2=expr {$v = OperatorStatement($e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
