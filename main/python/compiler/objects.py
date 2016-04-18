@@ -1,3 +1,6 @@
+import itertools
+
+
 class CompilerError(BaseException):
     def __init__(self, context, line, column, message):
         p = 'Error: {} at ({}, {}):\n'.format(message, line, column)
@@ -195,23 +198,30 @@ class DeclareVariableStatement(Statement):
 
         context.variables.new(name, t)
 
+    def __len__(self):
+        return 0
+
     def resolve(self, context):
         return []
 
 
 class GetVariableStatement(Statement):
     def __init__(self, context, name, position):
+        super().__init__(context, 'void', position)
+
         if name not in context.variables:
             raise self.exception("Variable {} is not defined".format(name))
         variable = context.variables[name]
-
-        super().__init__(context, 'void', position)
         self._type = variable.type
 
         self.variable = variable
+        self.seq = self.variable.resolve()
+
+    def __len__(self):
+        return len(self.seq)
 
     def resolve(self, context):
-        return self.variable.resolve(context)
+        return self.seq
 
 
 class AssignVariableStatement(Statement):
@@ -230,13 +240,17 @@ class AssignVariableStatement(Statement):
 
         self.variable = variable
         self.expr = expr
+        self.seq = self.variable.update()
+
+    def __len__(self):
+        return len(self.expr) + len(self.seq)
 
     def resolve(self, context):
         return self.expr.resolve(context) + \
-               self.variable.update()
+               self.seq
 
 
-class DeclareAndAssigneVariableStatement(Statement):
+class DeclareAndAssignVariableStatement(Statement):
     def __init__(self, context, t, name, expr, position):
         super().__init__(context, 'void', position)
         assert isinstance(expr, Statement)
@@ -252,10 +266,45 @@ class DeclareAndAssigneVariableStatement(Statement):
 
         self.variable = variable
         self.expr = expr
+        self.seq = self.variable.update()
+
+    def __len__(self):
+        return len(self.expr) + len(self.seq)
 
     def resolve(self, context):
         return self.expr.resolve(context) + \
-               self.variable.update()
+               self.seq
+
+
+# class IfStatement(Statement):
+#     def __init__(self, context, op, expr, position):
+#         super().__init__(context, 'bool' if op in self.BOOLEAN_UNARY_OPERATORS else expr.type, position)
+#
+#         if expr.type == 'bool' and op not in self.BOOLEAN_UNARY_OPERATORS:
+#             raise self.exception("Unexpected unary operator for boolean expression: {}".format(op))
+#
+#         assert isinstance(expr, Statement)
+#
+#         self.expr = expr
+#         self.op = self.OP_TO_ASM_MAP[op]
+#
+#     def __len__(self):
+#         return len(self.expr) + len(self.op)
+#
+#     def resolve(self, context):
+#         return self.expr.resolve(context) + \
+#                self.op
+
+class ScopeStatement(Statement):
+    def __init__(self, context, body, position):
+        super().__init__(context, 'void', position)
+        self.body = body
+
+    def __len__(self):
+        return sum(len(i) for i in self.body)
+
+    def resolve(self, context):
+        return list(itertools.chain(*[i.resolve(context) for i in self.body]))
 
 
 class Variable:
@@ -285,6 +334,10 @@ class Variables:
         self._current[name] = Variable(t, name, len(self))
         return self._current[name]
 
+    @property
+    def previous(self):
+        return self._previous
+
     def __len__(self):
         return (0 if self._previous is None else len(self._previous)) + len(self._current)
 
@@ -311,9 +364,17 @@ class Context:
     def __init__(self, source, cp):
         self.file = None
         self.source = source
-        self.vars = []
         self.constant_pull = cp
         self.variables = Variables(self, None)
+
+    def push(self, p):
+        self.variables = Variables(self, self.variables)
+
+    def pop(self, p):
+        self.variables = self.variables.previous
+
+        if self.variables is None:
+            raise CompileError(self, p[0], p[1], 'Unexpectedly empty context')
 
     def resolveFuncCall(self):
         pass

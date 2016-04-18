@@ -20,13 +20,15 @@ class MyErrorListener(ErrorListener):
         raise ParseError(self._context, line, column, msg)
 
     def reportAmbiguity(self, recognizer, dfa, startIndex, stopIndex, exact, ambigAlts, configs):
-        raise Exception("Oh no!!")
+        raise Exception("Oh no1!!")
 
     def reportAttemptingFullContext(self, recognizer, dfa, startIndex, stopIndex, conflictingAlts, configs):
-        raise Exception("Oh no!!")
+
+        raise ParseError(self._context, 0, 0, str((recognizer, dfa, startIndex, stopIndex, conflictingAlts, configs)))
+        raise Exception("Oh no2!!")
 
     def reportContextSensitivity(self, recognizer, dfa, startIndex, stopIndex, prediction, configs):
-        raise Exception("Oh no!!")
+        raise Exception("Oh no3!!")
 }
 
 @parser::members {
@@ -65,7 +67,7 @@ expr returns [v]
 
 func_call returns [v] : ID '(' ( (expr ',' )* expr )? ')' {print('avaliableFs: ', $ID.pos)};
 
-variable_declaration_andassignment returns [v] : TYPE t=ID '=' expr {$v = DeclareAndAssigneVariableStatement(self.context, $TYPE.text, $t.text, $expr.v, ($t.line, $t.pos))} ;
+variable_declaration_andassignment returns [v] : TYPE t=ID '=' expr {$v = DeclareAndAssignVariableStatement(self.context, $TYPE.text, $t.text, $expr.v, ($t.line, $t.pos))} ;
 
 assignment returns [v] : ID t='=' expr {$v = AssignVariableStatement(self.context, $ID.text, $expr.v, ($t.line, $t.pos))} ;
 
@@ -81,6 +83,7 @@ seq returns [v]
     | assignment {$v=$assignment.v}
     | write {$v=$write.v}
     | read
+    | scope {$v=$scope.v}
     | if_expr
     | while_expr
     | func_call
@@ -97,6 +100,10 @@ body returns [r] locals [s = list()] : (
   ';'?
 )? {$r=$s};
 
+
+scope returns [v]
+    : s='{' '}' {$v=ScopeStatement(self.context, [], ($s.line, $s.pos))}
+    | s='{' {self.context.push(($s.line, $s.pos))} body {$v=ScopeStatement(self.context, $body.r, ($s.line, $s.pos))} e='}' {self.context.pop(($e.line, $e.pos))};
 
 // ((';' | WS) y=seq {$s.append($y.text); $r = $s})+
 
@@ -122,7 +129,7 @@ COMA : ',' ;
 PASS : 'pass' ;
 
 INT : DIGIT+ ;
-ID : ALPHA (ALPHA | DIGIT)* ;
+ID : ALPHA (ALPHA | DIGIT | '_')* ;
 //COMMENT : '/*' .*? '*/' -> skip ;
 //WS : [ \t\r\n]+ -> skip ; // skip spaces, tabs, newlines
 

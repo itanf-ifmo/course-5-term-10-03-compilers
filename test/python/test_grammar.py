@@ -17,7 +17,7 @@ def test(byte_code, stdin=None):
         p.stdin.write(stdin)
 
     o, e = p.communicate()
-    return o.decode("utf-8").strip(), e.decode("utf-8").strip(), p.returncode
+    return o.decode("utf-8").strip().replace('\n', ' '), e.decode("utf-8").strip(), p.returncode
 
 
 # @unittest.skip("demonstrating skipping")
@@ -279,6 +279,9 @@ class TestVariables(unittest.TestCase):
     def test_int_a__one(self):
         self.base('int a; a = 1', '')
 
+    def test_int_aa3dfD22_3132313sfc(self):
+        self.base('int aa3dfD22_3132313sfc = 1; aa3dfD22_3132313sfc>>', '1')
+
     # def test_use_before_declare(self):
     #     self.base('a = 1; int a; a>>', '1')
 
@@ -286,7 +289,7 @@ class TestVariables(unittest.TestCase):
         self.base('int a = 1; a>>', '1')
 
     def test_declare_define_and_redefine(self):
-        self.base('int a = 1; a>>; a = 2; a>>', '1\n2')
+        self.base('int a = 1; a>>; a = 2; a>>', '1 2')
 
     def test_int_a__one__print(self):
         self.base('int a; a = 1; a>>', '1')
@@ -295,7 +298,7 @@ class TestVariables(unittest.TestCase):
         self.assertRaisesRegex(objects.CompileError, 'Variable a is not defined', compiler, 'a = 1')
 
     def test_reassign(self):
-        self.base('int a; a = 1; a>>; a = 2; a>>', '1\n2')
+        self.base('int a; a = 1; a>>; a = 2; a>>', '1 2')
 
     def test_sum_vars(self):
         self.base('int a; a = 1; int b; b = 2; a + b>>', '3')
@@ -312,6 +315,38 @@ class TestVariables(unittest.TestCase):
 
     def test_complex2(self):
         self.base('int b = 10; int a = 1 + 2; b = 3; int c = a * a % b; c >>', '0')
+
+
+class TestScope(unittest.TestCase):
+    def base(self, src, expected_output):
+        stdout, stderr, rc = test(compiler(src))
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(expected_output, stdout)
+
+    def test_empty(self):
+        self.base('{}', '')
+
+    def test_simple(self):
+        self.base('{1>>}', '1')
+
+    def test_var_in_scope(self):
+        self.base('{int a = 0; a>>}', '0')
+
+    def test_var_out_scope(self):
+        self.base('int a = 1; a>>; {a>>}; a>>', '1 1 1')
+
+    def test_use_var_out_of_scope(self):
+        self.assertRaisesRegex(objects.CompileError, 'Variable a is not defined', compiler, '{int a = 0; a>>}; a>>')
+
+    def test_already_defined_in_scope(self):
+        self.assertRaisesRegex(objects.CompileError, 'Variable a already defined', compiler, '{int a; int a}')
+
+    def test_overriding_variable(self):
+        self.base('int a = 1; a>>; {int a = 0; a>>}; a>>', '1 0 1')
+
+    def test_assign_global_variable(self):
+        self.base('int a = 1; a>>; {a = 0; a>>}; a>>', '1 0 0')
 
 
 if __name__ == '__main__':
