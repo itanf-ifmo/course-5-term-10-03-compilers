@@ -20,15 +20,17 @@ class MyErrorListener(ErrorListener):
         raise ParseError(self._context, line, column, msg)
 
     def reportAmbiguity(self, recognizer, dfa, startIndex, stopIndex, exact, ambigAlts, configs):
-        raise Exception("Oh no1!!")
+        pass
+#        raise Exception("Oh no1!!")
 
     def reportAttemptingFullContext(self, recognizer, dfa, startIndex, stopIndex, conflictingAlts, configs):
-
-        raise ParseError(self._context, 0, 0, str((recognizer, dfa, startIndex, stopIndex, conflictingAlts, configs)))
-        raise Exception("Oh no2!!")
+        pass
+#        raise ParseError(self._context, 0, 0, str((recognizer, dfa, startIndex, stopIndex, conflictingAlts, configs)))
+#        raise Exception("Oh no2!!")
 
     def reportContextSensitivity(self, recognizer, dfa, startIndex, stopIndex, prediction, configs):
-        raise Exception("Oh no3!!")
+        pass
+#        raise Exception("Oh no3!!")
 }
 
 @parser::members {
@@ -43,7 +45,7 @@ def parse(source, context):
     parser = CompilerParser(stream)
     parser._listeners = [ MyErrorListener(context) ]
     parser.setContext(context)
-    return list(itertools.chain(*[i.resolve(context) for i in parser.body().r]))
+    return list(itertools.chain(*[i.resolve(context) for i in parser.body().v]))
 }
 
 expr returns [v]
@@ -78,44 +80,54 @@ read : '>>' ID ;
 //read : 'read' ID ;
 
 seq returns [v]
-    : variable_declaration {$v=$variable_declaration.v}
-    | variable_declaration_andassignment {$v=$variable_declaration_andassignment.v}
-    | assignment {$v=$assignment.v}
+    : assignment {$v=$assignment.v}
     | write {$v=$write.v}
     | read
     | scope {$v=$scope.v}
-    | if_expr
+    | if_expr {$v=$if_expr.v}
     | while_expr
     | func_call
     | PASS
     | returnW
-    | function_declaration
     ;
 
 //body : (seq (';' seq)*)? ;
 
-body returns [r] locals [s = list()] : (
-  t=seq {$s.append($seq.v)}
-  (';' seq {$s.append($seq.v)})*
+body returns [v] locals [s = list()] : (
+  body_seq {$s.append($body_seq.v)}
+  (';' body_seq {$s.append($body_seq.v)})*
   ';'?
-)? {$r=$s};
+)? {$v=$s};
 
+body_seq returns [v]
+    : declarations {$v = $declarations.v}
+    | seq {$v = $seq.v}
+    ;
+
+declarations returns [v]
+    : variable_declaration {$v=$variable_declaration.v}
+    | variable_declaration_andassignment {$v=$variable_declaration_andassignment.v}
+    | function_declaration
+    ;
 
 scope returns [v]
     : s='{' '}' {$v=ScopeStatement(self.context, [], ($s.line, $s.pos))}
-    | s='{' {self.context.push(($s.line, $s.pos))} body {$v=ScopeStatement(self.context, $body.r, ($s.line, $s.pos))} e='}' {self.context.pop(($e.line, $e.pos))};
+    | s='{' {self.context.push(($s.line, $s.pos))} body {$v=ScopeStatement(self.context, $body.v, ($s.line, $s.pos))} e='}' {self.context.pop(($e.line, $e.pos))};
 
 // ((';' | WS) y=seq {$s.append($y.text); $r = $s})+
 
 
 variable_declaration returns [v]: t=TYPE ID {$v = DeclareVariableStatement(self.context, $t.text, $ID.text, ($ID.line, $ID.pos))};
 function_declaration : function_type function_name '(' function_parameters? ')' '{' body '}'
-    {self.functions.append(Function($function_type.text, $function_name.text, $function_parameters.text, $body.r)) } ;
+    {self.functions.append(Function($function_type.text, $function_name.text, $function_parameters.text, $body.v)) } ;
 
 returnW: 'return' expr? ;
 
-while_expr : 'while' expr ':' '{' body '}' ;
-if_expr : 'if' expr ':' '{' body '}' ( 'else' '{' body '}' )? ;
+while_expr : 'while' expr '{' body '}' ;
+if_expr returns [v]
+    : i='if' e=expr t=seq 'else' f=seq {$v = IfStatement(self.context, $e.v, $t.v, $f.v, ($i.line, $i.pos))}
+    | i='if' e=expr t=seq {$v = IfStatement(self.context, $e.v, $t.v, None, ($i.line, $i.pos))}
+    ;
 
 
 function_type : TYPE | 'void' ;

@@ -349,5 +349,54 @@ class TestScope(unittest.TestCase):
         self.base('int a = 1; a>>; {a = 0; a>>}; a>>', '1 0 0')
 
 
+class TestIfCondition(unittest.TestCase):
+    def base(self, src, expected_output):
+        stdout, stderr, rc = test(compiler(src))
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(expected_output, stdout)
+
+    def test_empty_true_short(self):
+        self.base('if true {}', '')
+
+    def test_empty_false_short(self):
+        self.base('if false {}', '')
+
+    def test_empty_true(self):
+        self.base('if true {} else {}', '')
+
+    def test_empty_false(self):
+        self.base('if false {} else {}', '')
+
+    def test_true_short(self):
+        self.base('if true 1>>', '1')
+
+    def test_false_short(self):
+        self.base('if false 1>>', '')
+
+    def test_true(self):
+        self.base('if true 1>> else 2>>', '1')
+
+    def test_false(self):
+        self.base('if false 1>> else 2>>', '2')
+
+    def test_declare_var_in_condition(self):
+        self.assertRaisesRegex(objects.ParseError, 'no viable alternative at input', compiler, 'if false int a = 1')
+
+    def test_set_var_in_if(self):
+        self.base('int a = 1; a>>; if a - 1 {a = 4; 1>>} else {a = 3; 2>>}; a>>', '1 2 3')
+
+#
+# class TestWhile(unittest.TestCase):
+#     def base(self, src, expected_output):
+#         stdout, stderr, rc = test(compiler(src))
+#         self.assertEqual(0, rc, "expect zero return code")
+#         self.assertEqual('', stderr, 'Expect empty stderr')
+#         self.assertEqual(expected_output, stdout)
+#
+#     def test_false(self):
+#         self.base('while false: {}', '2')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -276,24 +276,30 @@ class DeclareAndAssignVariableStatement(Statement):
                self.seq
 
 
-# class IfStatement(Statement):
-#     def __init__(self, context, op, expr, position):
-#         super().__init__(context, 'bool' if op in self.BOOLEAN_UNARY_OPERATORS else expr.type, position)
-#
-#         if expr.type == 'bool' and op not in self.BOOLEAN_UNARY_OPERATORS:
-#             raise self.exception("Unexpected unary operator for boolean expression: {}".format(op))
-#
-#         assert isinstance(expr, Statement)
-#
-#         self.expr = expr
-#         self.op = self.OP_TO_ASM_MAP[op]
-#
-#     def __len__(self):
-#         return len(self.expr) + len(self.op)
-#
-#     def resolve(self, context):
-#         return self.expr.resolve(context) + \
-#                self.op
+class IfStatement(Statement):
+    def __init__(self, context, expr, true_seq, false_seq, position):
+        super().__init__(context, 'void', position)
+        assert isinstance(expr, Statement)
+        assert isinstance(true_seq, Statement)
+        assert false_seq is None or isinstance(false_seq, Statement)
+
+        self.expr = expr
+        self.ts, self.fs = len(true_seq), (len(false_seq) if false_seq is not None else 0)
+        self.true_seq = true_seq
+        self.false_seq = false_seq
+
+    def __len__(self):
+        return len(self.expr) + 3 + self.fs + 3 + self.ts
+
+    def resolve(self, context):
+        return self.expr.resolve(context) + [
+            'ifne',
+            format(3 + self.fs + 3, '04x'),
+        ] + (self.false_seq.resolve(context) if self.false_seq is not None else []) + [
+           'goto',
+           format(3 + self.ts, '04x'),
+        ] + self.true_seq.resolve(context)
+
 
 class ScopeStatement(Statement):
     def __init__(self, context, body, position):
