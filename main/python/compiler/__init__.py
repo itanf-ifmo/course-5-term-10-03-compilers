@@ -1,27 +1,11 @@
-import itertools
-
 from compiler import bytemap
-from compiler.antlr import CompilerLexer
 from compiler.antlr import CompilerParser
 from compiler.bytemap import ConstantPull
-from compiler.objects import Context
+from compiler.objects import Context, CompileError
 from compiler.settings import *
-import antlr4
 
 
 def compiler(source):
-    # input_ = antlr4.FileStream('antlr/a.txt')
-    input_ = antlr4.InputStream(source)
-
-    # input_ = antlr4.InputStream("a=3;\nf(a) { pass; }\n")
-
-    lexer = CompilerLexer.CompilerLexer(input_)
-    stream = antlr4.CommonTokenStream(lexer)
-    parser = CompilerParser.CompilerParser(stream)
-
-    # rule_name = 'body'
-    # tree = getattr(parser, rule_name)()
-
     cp = ConstantPull()
     cp['code section'] = 'Code'
     cp['StackMapTable section'] = 'StackMapTable'
@@ -65,8 +49,7 @@ def compiler(source):
     cp.putNameAndType('println(Z)V', 'println', '(Z)V')
     cp.putMethodref('println:(Z)V', 'PrintStream class', 'println(Z)V')
 
-    c = Context(cp)
-    s = parser.body().r
+    c = Context(source, cp)
 
     # print(getMainFunction(parser.functions))
 
@@ -79,7 +62,6 @@ def compiler(source):
     # put jmp to globals int to code
     # put functions to code
     # put globals initialization to code
-
-    seq = list(itertools.chain(*[i.resolve(c) for i in s]))
+    seq = CompilerParser.CompilerParser.parse(source, c)
     byte_code = bytemap.compile(cp, seq)
     return bytearray(byte_code)

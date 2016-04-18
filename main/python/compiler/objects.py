@@ -1,3 +1,24 @@
+class CompilerError(BaseException):
+    def __init__(self, context, line, column, message):
+        p = 'Error: {} at ({}, {}):\n'.format(message, line, column)
+
+        p += '\n'.join(context.source.split('\n')[max(0, line - 2):][:2])
+        p += '\n' + (' ' * column) + '^'
+
+        if context.file:
+            p += '\n File "{}", line {}'.format(context.file, line)
+
+        super().__init__(p)
+
+
+class CompileError(CompilerError):
+    pass
+
+
+class ParseError(CompilerError):
+    pass
+
+
 class Function:
     def __init__(self, return_type, name, parameters, body):
         self.return_type = return_type
@@ -13,7 +34,8 @@ class Function:
 
 
 class Statement:
-    def __init__(self, t, position):
+    def __init__(self, context, t, position):
+        self._context = context
         self._type = t
         self._position = position
 
@@ -21,7 +43,7 @@ class Statement:
         return []
 
     def exception(self, msg):
-        return Exception("line:{}, pos:{}   {}".format(self._position[0], self._position[1], msg))
+        return CompileError(self._context, self._position[0], self._position[1], msg)
 
     @property
     def type(self):
@@ -32,8 +54,8 @@ class Statement:
 
 
 class BoolStatement(Statement):
-    def __init__(self, v, position):
-        super().__init__('bool', position)
+    def __init__(self, context, v, position):
+        super().__init__(context, 'bool', position)
 
         self.v = v
 
@@ -50,8 +72,8 @@ class BoolStatement(Statement):
 
 
 class PrintStatement(Statement):
-    def __init__(self, expr, position):
-        super().__init__('print', position)
+    def __init__(self, context, expr, position):
+        super().__init__(context, 'void', position)
 
         assert isinstance(expr, Statement)
         self.expr = expr
@@ -93,8 +115,8 @@ class OperatorStatement(Statement):
         'or': ['ior'],
     }
 
-    def __init__(self, expr1, op, expr2, position):
-        super().__init__('bool' if op in self.RETURNS_BOOLEAN else expr1.type, position)
+    def __init__(self, context, expr1, op, expr2, position):
+        super().__init__(context, 'bool' if op in self.RETURNS_BOOLEAN else expr1.type, position)
         assert isinstance(expr1, Statement)
         assert isinstance(expr2, Statement)
 
@@ -128,8 +150,8 @@ class UnaryOperatorStatement(Statement):
         '-': ['ineg'],
     }
 
-    def __init__(self, op, expr, position):
-        super().__init__('bool' if op in self.BOOLEAN_UNARY_OPERATORS else expr.type, position)
+    def __init__(self, context, op, expr, position):
+        super().__init__(context, 'bool' if op in self.BOOLEAN_UNARY_OPERATORS else expr.type, position)
 
         if expr.type == 'bool' and op not in self.BOOLEAN_UNARY_OPERATORS:
             raise self.exception("Unexpected unary operator for boolean expression: {}".format(op))
@@ -148,8 +170,8 @@ class UnaryOperatorStatement(Statement):
 
 
 class ConstIntStatement(Statement):
-    def __init__(self, i, position):
-        super().__init__('int', position)
+    def __init__(self, context, i, position):
+        super().__init__(context, 'int', position)
 
         self.i = i
 
@@ -165,10 +187,133 @@ class ConstIntStatement(Statement):
         ]
 
 
+class DeclareVariableStatement(Statement):
+    def __init__(self, context, t, name, position):
+        super().__init__(context, 'void', position)
+        if name in context.variables.current_scope:
+            raise self.exception("Variable {} already defined in this scope".format(name))
+
+        context.variables.new(name, t)
+
+    def resolve(self, context):
+        return []
+
+
+class GetVariableStatement(Statement):
+    def __init__(self, context, name, position):
+        if name not in context.variables:
+            raise self.exception("Variable {} is not defined".format(name))
+        variable = context.variables[name]
+
+        super().__init__(context, 'void', position)
+        self._type = variable.type
+
+        self.variable = variable
+
+    def resolve(self, context):
+        return self.variable.resolve(context)
+
+
+class AssignVariableStatement(Statement):
+    def __init__(self, context, name, expr, position):
+        super().__init__(context, 'void', position)
+        assert isinstance(expr, Statement)
+
+        if name not in context.variables:
+            raise self.exception("Variable {} is not defined".format(name))
+
+        variable = context.variables[name]
+
+        if variable.type != expr.type:
+            raise self.exception("Type {} of variable {} doesn't matches expression type {}".format(
+                variable.type, name, expr.type))
+
+        self.variable = variable
+        self.expr = expr
+
+    def resolve(self, context):
+        return self.expr.resolve(context) + \
+               self.variable.update()
+
+
+class DeclareAndAssigneVariableStatement(Statement):
+    def __init__(self, context, t, name, expr, position):
+        super().__init__(context, 'void', position)
+        assert isinstance(expr, Statement)
+
+        if name in context.variables.current_scope:
+            raise self.exception("Variable {} already defined in this scope".format(name))
+
+        variable = context.variables.new(name, t)
+
+        if variable.type != expr.type:
+            raise self.exception("Type {} of variable {} doesn't matches expression type {}".format(
+                variable.type, name, expr.type))
+
+        self.variable = variable
+        self.expr = expr
+
+    def resolve(self, context):
+        return self.expr.resolve(context) + \
+               self.variable.update()
+
+
+class Variable:
+    def __init__(self, t, name, number):
+        self.type = t
+        self.name = name
+        self.number = format(number, '02x')
+
+    def update(self):
+        return ['i' + 'store', self.number]
+
+    def resolve(self, _=None):
+        return ['i' + 'load', self.number]
+
+
+class Variables:
+    def __init__(self, _, previous):
+        # todo count locals
+        self._previous = previous
+        self._current = {}
+
+    @property
+    def current_scope(self):
+        return self._current
+
+    def new(self, name, t):
+        self._current[name] = Variable(t, name, len(self))
+        return self._current[name]
+
+    def __len__(self):
+        return (0 if self._previous is None else len(self._previous)) + len(self._current)
+
+    def __contains__(self, item):
+        if item in self._current:
+            return True
+
+        if self._previous is None:
+            return False
+
+        return self._previous[item]
+
+    def __getitem__(self, item):
+        if item in self._current:
+            return self._current[item]
+
+        if self._previous is None:
+            return None
+
+        return self._previous[item]
+
+
 class Context:
-    def __init__(self, cp):
+    def __init__(self, source, cp):
+        self.file = None
+        self.source = source
         self.vars = []
         self.constant_pull = cp
+        self.variables = Variables(self, None)
 
     def resolveFuncCall(self):
         pass

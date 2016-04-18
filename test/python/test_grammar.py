@@ -3,7 +3,7 @@ from subprocess import Popen, PIPE
 import unittest
 
 from compiler.settings import *
-from compiler import compiler
+from compiler import compiler, objects
 
 
 def test(byte_code, stdin=None):
@@ -59,7 +59,7 @@ class TestBooleans(unittest.TestCase):
         self.base('! -1 >>', 'true')
 
     def test_minus_true(self):
-        self.assertRaisesRegex(Exception, 'Unexpected unary operator for boolean expression: -', compiler, '- true >>')
+        self.assertRaisesRegex(objects.CompileError, 'Unexpected unary operator for boolean expression: -', compiler, '- true >>')
 
     def test_true_or_true(self):
         self.base('true or true >>', 'true')
@@ -119,10 +119,9 @@ class TestBooleans(unittest.TestCase):
         self.base('true or false and true >>', 'true')
 
     def test_true_plus_true(self):
-        self.assertRaisesRegex(Exception, 'Unexpected operator for boolean parameters: +', compiler, 'true + true >>')
+        self.assertRaisesRegex(objects.CompileError, 'Unexpected operator for boolean parameters: +', compiler, 'true + true >>')
 
 
-# @unittest.skip("demonstrating skipping")
 class TestBasics(unittest.TestCase):
     def base(self, src, expected_output):
         stdout, stderr, rc = test(compiler(src))
@@ -134,7 +133,6 @@ class TestBasics(unittest.TestCase):
         self.base('', '')
 
 
-# @unittest.skip("demonstrating skipping")
 class TestNumbers(unittest.TestCase):
     def base(self, src, expected_output):
         stdout, stderr, rc = test(compiler(src))
@@ -253,13 +251,68 @@ class TestComparison(unittest.TestCase):
         self.base('2 <= 2 >>', 'true')
 
     def test_true_le_two(self):
-        self.assertRaisesRegex(Exception, 'Type of operand mismatches: bool <= int', compiler, 'true <= 2 >>')
+        self.assertRaisesRegex(objects.CompileError, 'Type of operand mismatches: bool <= int', compiler, 'true <= 2 >>')
 
     def test_true_le_true(self):
         self.base('true <= true >>', 'true')
 
     def test_false_lt_true(self):
         self.base('false <= true >>', 'true')
+
+
+class TestVariables(unittest.TestCase):
+    def base(self, src, expected_output):
+        stdout, stderr, rc = test(compiler(src))
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(expected_output, stdout)
+
+    def test_int_a(self):
+        self.base('int a', '')
+
+    def test_already_defined(self):
+        self.assertRaisesRegex(objects.CompileError, 'Variable a already defined', compiler, 'int a; int a;')
+
+    def test_int_a__int_b(self):
+        self.base('int a;int b;', '')
+
+    def test_int_a__one(self):
+        self.base('int a; a = 1', '')
+
+    # def test_use_before_declare(self):
+    #     self.base('a = 1; int a; a>>', '1')
+
+    def test_declare_and_define(self):
+        self.base('int a = 1; a>>', '1')
+
+    def test_declare_define_and_redefine(self):
+        self.base('int a = 1; a>>; a = 2; a>>', '1\n2')
+
+    def test_int_a__one__print(self):
+        self.base('int a; a = 1; a>>', '1')
+
+    def test_one__int_a__print(self):
+        self.assertRaisesRegex(objects.CompileError, 'Variable a is not defined', compiler, 'a = 1')
+
+    def test_reassign(self):
+        self.base('int a; a = 1; a>>; a = 2; a>>', '1\n2')
+
+    def test_sum_vars(self):
+        self.base('int a; a = 1; int b; b = 2; a + b>>', '3')
+
+    def test_bool_var(self):
+        self.base('bool a; a = true; a>>', 'true')
+
+    def test_bool_var_number_expr(self):
+        msg = "Type bool of variable a doesn't matches expression type int"
+        self.assertRaisesRegex(objects.CompileError, msg, compiler, 'bool a; a = 1')
+
+    def test_complex(self):
+        self.base('int b; int a; a = 1 + 2; b = 2; int c; c = a * a / b; c >>', '4')
+
+    def test_complex2(self):
+        self.base('int b = 10; int a = 1 + 2; b = 3; int c = a * a % b; c >>', '0')
+
 
 if __name__ == '__main__':
     unittest.main()
