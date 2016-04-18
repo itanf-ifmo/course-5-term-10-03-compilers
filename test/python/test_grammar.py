@@ -369,16 +369,34 @@ class TestIfCondition(unittest.TestCase):
         self.base('if false {} else {}', '')
 
     def test_true_short(self):
-        self.base('if true 1>>', '1')
+        self.base('if true 1 >>', '1')
 
     def test_false_short(self):
-        self.base('if false 1>>', '')
+        self.base('if false 1 >>', '')
 
     def test_true(self):
-        self.base('if true 1>> else 2>>', '1')
+        self.base('if true 1 >> else 2 >>', '1')
 
     def test_false(self):
-        self.base('if false 1>> else 2>>', '2')
+        self.base('if false 1 >> else 2 >>', '2')
+
+    def test_not_true(self):
+        self.base('if not true 1 >> else 2 >>', '2')
+
+    def test_not_false(self):
+        self.base('if ! false 1 >> else 2 >>', '1')
+
+    def test_not_not_true(self):
+        self.base('if !! true 1 >> else 2 >>', '1')
+
+    def test_not_not_false(self):
+        self.base('if not not false 1 >> else 2 >>', '2')
+
+    def test_zero(self):
+        self.base('if 0 true >> else false >>', 'false')
+
+    def test_one(self):
+        self.base('if 1 true >> else false >>', 'true')
 
     def test_declare_var_in_condition(self):
         self.assertRaisesRegex(objects.ParseError, 'no viable alternative at input', compiler, 'if false int a = 1')
@@ -386,16 +404,25 @@ class TestIfCondition(unittest.TestCase):
     def test_set_var_in_if(self):
         self.base('int a = 1; a>>; if a - 1 {a = 4; 1>>} else {a = 3; 2>>}; a>>', '1 2 3')
 
-#
-# class TestWhile(unittest.TestCase):
-#     def base(self, src, expected_output):
-#         stdout, stderr, rc = test(compiler(src))
-#         self.assertEqual(0, rc, "expect zero return code")
-#         self.assertEqual('', stderr, 'Expect empty stderr')
-#         self.assertEqual(expected_output, stdout)
-#
-#     def test_false(self):
-#         self.base('while false: {}', '2')
+    def test_declare_and_use_var_in_condition(self):
+        self.base('int a = 1; a>>; if a - 1 {int a = 4; a>>} else {int a = 3; a>>}; a>>', '1 3 1')
+
+
+class TestWhile(unittest.TestCase):
+    def base(self, src, expected_output):
+        stdout, stderr, rc = test(compiler(src))
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(expected_output, stdout)
+
+    def test_false(self):
+        self.base('while false { 1 >> }; 2 >>', '2')
+
+    def test_once(self):
+        self.base('bool a = true; a>>; while a { 1 >>; a = false}; a>>', 'true 1 false')
+
+    def test_many_times(self):
+        self.base('int a = 10; while a { a = a - 1; a >> }; -1 >>', '9 8 7 6 5 4 3 2 1 0 -1')
 
 
 if __name__ == '__main__':

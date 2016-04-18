@@ -32,9 +32,6 @@ class Function:
         print(self.body)
         self.main = return_type == 'void' and name == 'main' and parameters is None
 
-    def __str__(self):
-        return "{} {}({})".format(self.return_type, self.name, self.parameters if self.parameters is not None else '')
-
 
 class Statement:
     def __init__(self, context, t, position):
@@ -118,30 +115,30 @@ class OperatorStatement(Statement):
         'or': ['ior'],
     }
 
-    def __init__(self, context, expr1, op, expr2, position):
-        super().__init__(context, 'bool' if op in self.RETURNS_BOOLEAN else expr1.type, position)
-        assert isinstance(expr1, Statement)
-        assert isinstance(expr2, Statement)
+    def __init__(self, context, left, op, right, position):
+        super().__init__(context, 'bool' if op in self.RETURNS_BOOLEAN else left.type, position)
+        assert isinstance(left, Statement)
+        assert isinstance(right, Statement)
 
-        if expr1.type != expr2.type and op not in self.BOOLEAN_OPERATORS:
-            raise self.exception("Type of operand mismatches: {} {} {}".format(expr1.type, op, expr2.type))
+        if left.type != right.type and op not in self.BOOLEAN_OPERATORS:
+            raise self.exception("Type of operand mismatches: {} {} {}".format(left.type, op, right.type))
 
-        if expr1.type == 'bool' and op not in self.RETURNS_BOOLEAN:
+        if left.type == 'bool' and op not in self.RETURNS_BOOLEAN:
             raise self.exception("Unexpected operator for boolean parameters: {}".format(op))
 
-        self.expr1 = expr1
-        self.expr2 = expr2
+        self.left = left
+        self.right = right
 
         self.op = self.OP_TO_ASM_MAP[op]
 
     def __len__(self):
-        return len(self.expr1) + len(self.op) + len(self.expr1)
+        return len(self.left) + len(self.op) + len(self.right)
 
     # noinspection PyTypeChecker
     def resolve(self, context):
         # return self.op
-        return self.expr1.resolve(context) + \
-               self.expr2.resolve(context) + \
+        return self.left.resolve(context) + \
+               self.right.resolve(context) + \
                self.op
 
 
@@ -301,6 +298,30 @@ class IfStatement(Statement):
         ] + self.true_seq.resolve(context)
 
 
+class WhileStatement(Statement):
+    def __init__(self, context, expr, seq, position):
+        super().__init__(context, 'void', position)
+        assert isinstance(expr, Statement)
+        assert isinstance(seq, Statement)
+
+        self.expr = expr
+        self.seq = seq
+        self.seq_size = len(seq)
+        self.expr_size = len(expr)
+
+    def __len__(self):
+        return len(self.expr) + 3 + self.seq_size + 3
+
+    def resolve(self, context):
+        return self.expr.resolve(context) + [
+            'ifeq',
+            format(3 + self.seq_size + 3, '04x'),
+        ] + self.seq.resolve(context) + [
+           'goto',
+           format(256 * 256 - 3 - self.seq_size - self.expr_size, '04x'),
+        ]
+
+
 class ScopeStatement(Statement):
     def __init__(self, context, body, position):
         super().__init__(context, 'void', position)
@@ -381,13 +402,3 @@ class Context:
 
         if self.variables is None:
             raise CompileError(self, p[0], p[1], 'Unexpectedly empty context')
-
-    def resolveFuncCall(self):
-        pass
-
-    def resolveVariable(self, var_name):
-        for ctx in self.vars:
-            if var_name in ctx:
-                return ctx[var_name]
-
-        return None

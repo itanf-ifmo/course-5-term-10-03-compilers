@@ -82,13 +82,13 @@ read : '>>' ID ;
 seq returns [v]
     : assignment {$v=$assignment.v}
     | write {$v=$write.v}
-    | read
+//    | read {$v=$read.v}
     | scope {$v=$scope.v}
     | if_expr {$v=$if_expr.v}
-    | while_expr
-    | func_call
-    | PASS
-    | returnW
+    | while_expr {$v=$while_expr.v}
+//    | func_call {$v=$func_call.v}
+//    | PASS {$v=$func_call.v}
+//    | returnW {$v=$returnW.v}
     ;
 
 //body : (seq (';' seq)*)? ;
@@ -123,7 +123,7 @@ function_declaration : function_type function_name '(' function_parameters? ')' 
 
 returnW: 'return' expr? ;
 
-while_expr : 'while' expr '{' body '}' ;
+while_expr returns [v] : w='while' e=expr s=seq {$v = WhileStatement(self.context, $e.v, $s.v, ($w.line, $w.pos))};
 if_expr returns [v]
     : i='if' e=expr t=seq 'else' f=seq {$v = IfStatement(self.context, $e.v, $t.v, $f.v, ($i.line, $i.pos))}
     | i='if' e=expr t=seq {$v = IfStatement(self.context, $e.v, $t.v, None, ($i.line, $i.pos))}
