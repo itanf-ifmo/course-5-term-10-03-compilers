@@ -45,7 +45,7 @@ def parse(source, context):
     parser = CompilerParser(stream)
     parser._listeners = [ MyErrorListener(context) ]
     parser.setContext(context)
-    return list(itertools.chain(*[i.resolve(context) for i in parser.body().v]))
+    return list(itertools.chain(*[i.resolve(context) for i in parser.body().v if i is not None]))
 }
 
 expr returns [v]
@@ -67,7 +67,7 @@ expr returns [v]
     | e1=expr o=('||' | 'or')      e2=expr {$v = OperatorStatement(self.context, $e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
     ;
 
-func_call returns [v] : ID '(' ( (expr ',' )* expr )? ')' {print('avaliableFs: ', $ID.pos)};
+func_call returns [v] : ID '(' ( (expr ',' )* expr )? ')' {$v=None};
 
 variable_declaration_andassignment returns [v] : TYPE t=ID '=' expr {$v = DeclareAndAssignVariableStatement(self.context, $TYPE.text, $t.text, $expr.v, ($t.line, $t.pos))} ;
 
@@ -86,7 +86,7 @@ seq returns [v]
     | scope {$v=$scope.v}
     | if_expr {$v=$if_expr.v}
     | while_expr {$v=$while_expr.v}
-//    | func_call {$v=$func_call.v}
+    | func_call {$v=$func_call.v}
 //    | PASS {$v=$func_call.v}
 //    | returnW {$v=$returnW.v}
     ;
@@ -107,19 +107,16 @@ body_seq returns [v]
 declarations returns [v]
     : variable_declaration {$v=$variable_declaration.v}
     | variable_declaration_andassignment {$v=$variable_declaration_andassignment.v}
-    | function_declaration
+    | function_declaration {$v=$function_declaration.v}
     ;
 
 scope returns [v]
     : s='{' '}' {$v=ScopeStatement(self.context, [], ($s.line, $s.pos))}
     | s='{' {self.context.push(($s.line, $s.pos))} body {$v=ScopeStatement(self.context, $body.v, ($s.line, $s.pos))} e='}' {self.context.pop(($e.line, $e.pos))};
 
-// ((';' | WS) y=seq {$s.append($y.text); $r = $s})+
-
-
-variable_declaration returns [v]: t=TYPE ID {$v = DeclareVariableStatement(self.context, $t.text, $ID.text, ($ID.line, $ID.pos))};
-function_declaration : function_type function_name '(' function_parameters? ')' '{' body '}'
-    {self.functions.append(Function($function_type.text, $function_name.text, $function_parameters.text, $body.v)) } ;
+variable_declaration returns [v] : t=TYPE ID {$v = DeclareVariableStatement(self.context, $t.text, $ID.text, ($ID.line, $ID.pos))} ;
+function_declaration returns [v] : function_type fn=function_name function_parameters t='{' body '}'
+    {$v = FunctionStatement(self.context, $function_type.text, $fn.text, $function_parameters.v, $body.v, ($t.line, $t.pos))} ;
 
 returnW: 'return' expr? ;
 
@@ -129,10 +126,14 @@ if_expr returns [v]
     | i='if' e=expr t=seq {$v = IfStatement(self.context, $e.v, $t.v, None, ($i.line, $i.pos))}
     ;
 
-
 function_type : TYPE | 'void' ;
 function_name : ID ;
-function_parameters : (TYPE ID ',')* TYPE ID ;
+
+function_parameters returns [v] locals [s = list()] :
+    '('
+        (    TYPE ID {$s.append(($TYPE.text, $ID.text))})?
+        (',' TYPE ID {$s.append(($TYPE.text, $ID.text))})*
+    ')' {$v = $s};
 
 TYPE : 'int' | 'bool' ;
 BOOL : 'true' | 'false' ;

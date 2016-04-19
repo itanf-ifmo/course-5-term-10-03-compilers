@@ -10,9 +10,9 @@ def compiler(source):
     cp['code section'] = 'Code'
     cp['StackMapTable section'] = 'StackMapTable'
     cp['this class name'] = 'A'
-    cp['super class name'] = 'java/lang/Object'
+    cp['Object class name'] = 'java/lang/Object'
     cp.putClass('this class', 'this class name')
-    cp.putClass('super class', 'super class name')
+    cp.putClass('Object class', 'Object class name')
 
     cp['main method name'] = 'main'
     cp['main method type'] = '([Ljava/lang/String;)V'
@@ -51,17 +51,6 @@ def compiler(source):
 
     c = Context(source, cp)
 
-    # print(getMainFunction(parser.functions))
-
-    # create constants
-    # calculate function table
-    # calculate globals table
-
-    # allocate globals on stack
-
-    # put jmp to globals int to code
-    # put functions to code
-    # put globals initialization to code
     seq = CompilerParser.CompilerParser.parse(source, c)
-    byte_code = bytemap.compile(cp, seq)
+    byte_code = bytemap.compile(c, seq)
     return bytearray(byte_code)

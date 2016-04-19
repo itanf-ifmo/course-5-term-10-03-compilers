@@ -215,7 +215,10 @@ class ConstantPull:
         if isinstance(value, str):
             v = '01{}{}'.format(format(len(value), '04x'), ''.join(format(i, '02x') for i in value.encode()))
         elif isinstance(value, int):
-            v = '03' + format(value, '08x')
+            if value < 0:
+                v = '03' + format(256 * 256 * 256 * 256 + value, '08x')
+            else:
+                v = '03' + format(value, '08x')
         else:
             v = format(value[0], '02x') + ''.join(i for i in value[1:])
 
@@ -251,7 +254,7 @@ class ByteCodeGenerator:
         self.cp = cp
         self.seq = instr + 'b1'
         self.max_stack = 1000
-        self.max_locals = 10  # todo
+        self.max_locals = 100  # todo
 
     def generate(self):
         code = ''
@@ -262,7 +265,7 @@ class ByteCodeGenerator:
         code += str(self.cp)
         code += '0020'  # access_flags
         code += self.cp['this class']  # this_class
-        code += self.cp['super class']  # super_class
+        code += self.cp['Object class']  # super_class
         code += '0000'  # interfaces_count
         code += '0000'  # fields_count
         code += '0001'  # methods_count
@@ -306,5 +309,5 @@ def processAsm(seq):
         yield format(toByte[s], '02x')
 
 
-def compile(cp, seq):
-    return ByteCodeGenerator(cp, ''.join(processAsm(seq))).generate()
+def compile(c, seq):
+    return ByteCodeGenerator(c.constant_pull, ''.join(processAsm(seq))).generate()

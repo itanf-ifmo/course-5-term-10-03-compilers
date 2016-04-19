@@ -22,17 +22,6 @@ class ParseError(CompilerError):
     pass
 
 
-class Function:
-    def __init__(self, return_type, name, parameters, body):
-        self.return_type = return_type
-        self.name = name
-        self.parameters = parameters
-        self.body = body
-
-        print(self.body)
-        self.main = return_type == 'void' and name == 'main' and parameters is None
-
-
 class Statement:
     def __init__(self, context, t, position):
         self._context = context
@@ -51,6 +40,119 @@ class Statement:
 
     def __len__(self):
         return 0
+
+
+class FunctionStatement(Statement):
+    def __init__(self, context, return_type, name, parameters, body, position):
+        super().__init__(context, 'void', position)
+
+        self.return_type = return_type
+        self.name = name
+        self.parameters = parameters
+        self.body = body[0]
+
+        print(return_type, name, parameters, body[0])
+        self.body_size = len(body[0])
+        print(self.body_size)
+        # self.main = return_type == 'void' and name == 'main' and parameters is None
+
+    def __len__(self):
+        return 0
+
+    def resolve(self, context):
+        return [
+            'sipush', '00', '05',
+            'anewarray', context.constant_pull['Object class'],
+            'astore_1',
+
+            'sipush', '00', '05',
+            'newarray', '0a',
+            'astore_0',
+
+            'aload_0',             # ref
+            'sipush', '00', '00',  # index
+            'sipush', format(256 * 256 - 3 - 30, '04x'),  # value
+            'iastore',             # store
+
+            'aload_1',
+            'sipush', '00', '00',  # index
+            'jsr', '0006',
+
+            'goto', format(3 + 6, '04x'),  # goto x
+                   'astore_3',
+                   'aload_3',
+
+                   'aastore',
+                   # 'nop',
+
+                   'goto', format(3 + 22, '04x'),  # goto 1
+
+            'nop',  # <- gotoX
+
+            'nop',
+            'nop',
+            'nop',
+            'nop',
+
+        ] + self.body.resolve(context) + [
+            'nop',
+            'nop',
+            'nop',
+            'nop',
+
+            'goto', format(3 + 16, '04x'),  # goto 2
+            'nop',
+            'nop',  # <- goto 1
+            'nop',
+            'nop',
+
+            'aload_0',             # ref
+            'sipush', '00', '00',  # index
+            'iaload',              # load
+
+
+            # 'nop', 'nop',
+            # 'nop', 'nop',
+            # 'nop', 'nop',
+            # 'bipush', 'a7',  # value
+            # 'bipush', 'ff',  # value
+            # 'bipush', 'e0',  # value
+
+
+            # 'goto', 'ffe5',
+
+            'aload_1',             # ref
+            'sipush', '00', '00',  # index
+            'aaload',  # load
+            'ret', '02',
+            'nop',
+            'nop',
+            'nop',
+            'nop',
+            'nop',  # <- goto 2
+            'nop',
+            'nop',
+            'nop',
+            'nop',
+            'nop',
+            'nop',
+            'nop',
+            'nop',
+            'nop',
+
+            'nop',
+            'nop',
+
+            'nop',
+            'nop',
+
+            'nop',
+            'nop',
+
+            'nop',
+            'nop',
+
+        ]
 
 
 class BoolStatement(Statement):

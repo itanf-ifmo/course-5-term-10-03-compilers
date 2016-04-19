@@ -425,5 +425,22 @@ class TestWhile(unittest.TestCase):
         self.base('int a = 10; while a { a = a - 1; a >> }; -1 >>', '9 8 7 6 5 4 3 2 1 0 -1')
 
 
+class TestFunctions(unittest.TestCase):
+    def base(self, src, expected_output):
+        stdout, stderr, rc = test(compiler(src))
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(expected_output, stdout)
+
+    def test_false(self):
+        self.base('void main() {1>>}; main()', '1')
+
+    # def test_once(self):
+    #     self.base('bool a = true; a>>; while a { 1 >>; a = false}; a>>', 'true 1 false')
+    #
+    # def test_many_times(self):
+    #     self.base('int a = 10; while a { a = a - 1; a >> }; -1 >>', '9 8 7 6 5 4 3 2 1 0 -1')
+
+
 if __name__ == '__main__':
     unittest.main()
