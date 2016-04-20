@@ -67,7 +67,13 @@ expr returns [v]
     | e1=expr o=('||' | 'or')      e2=expr {$v = OperatorStatement(self.context, $e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
     ;
 
-func_call returns [v] : ID '(' ( (expr ',' )* expr )? ')' {$v=None};
+func_call returns [v] : n=ID a=call_arguments{$v=FunctionCallStatement(self.context, $n.text, $a.v, ($n.line, $n.pos))} ;
+
+call_arguments returns [v] locals [s = list()] :
+    '('
+        (expr {$s.append($expr.v)})?
+        (',' expr {$s.append($expr.v)})*
+    ')' {$v=$s};
 
 variable_declaration_andassignment returns [v] : TYPE t=ID '=' expr {$v = DeclareAndAssignVariableStatement(self.context, $TYPE.text, $t.text, $expr.v, ($t.line, $t.pos))} ;
 

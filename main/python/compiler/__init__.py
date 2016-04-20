@@ -49,8 +49,16 @@ def compiler(source):
     cp.putNameAndType('println(Z)V', 'println', '(Z)V')
     cp.putMethodref('println:(Z)V', 'PrintStream class', 'println(Z)V')
 
+    cp['Integer class name'] = 'java/lang/Integer'
+    cp.putClass('Integer class', 'Integer class name')
+
+    cp['valueOf'] = 'valueOf'
+    cp['(I)Ljava/lang/Integer'] = '(I)Ljava/lang/Integer'
+    cp.putNameAndType('valueOf:(I)Ljava/lang/Integer', 'valueOf', '(I)Ljava/lang/Integer')
+    cp.putMethodref('Integer.valueOf', 'Integer class', 'valueOf:(I)Ljava/lang/Integer')
+
     c = Context(source, cp)
 
     seq = CompilerParser.CompilerParser.parse(source, c)
-    byte_code = bytemap.compile(c, seq)
+    byte_code = bytemap.compile(c, c.build_functions_table() + seq)
     return bytearray(byte_code)

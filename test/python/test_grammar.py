@@ -433,7 +433,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(expected_output, stdout)
 
     def test_false(self):
-        self.base('void main() {1>>}; main()', '1')
+        self.base('void main(int a) {1>>} ; main(1, !!1)', '1')
 
     # def test_once(self):
     #     self.base('bool a = true; a>>; while a { 1 >>; a = false}; a>>', 'true 1 false')

@@ -1,3 +1,5 @@
+from types import LambdaType
+
 bytecode = [
     ('aaload', '32', 0),
     ('aastore', '53', 0),
@@ -302,12 +304,19 @@ for i, b, a in bytecode:
 
 
 def processAsm(seq):
+    res = ''
     for s in seq:
-        if s not in toByte:
-            yield s
-            continue
-        yield format(toByte[s], '02x')
+        if isinstance(s, LambdaType):
+            res += s(256 * 256 - len(res) // 2 + 7)
+        elif s == 'f_call_w2':
+            res += format(256 * 256 - len(res) // 2 + 7, '04x')
+        elif s not in toByte:
+            res += s
+        else:
+            res += format(toByte[s], '02x')
+
+    return res
 
 
 def compile(c, seq):
-    return ByteCodeGenerator(c.constant_pull, ''.join(processAsm(seq))).generate()
+    return ByteCodeGenerator(c.constant_pull, processAsm(seq)).generate()

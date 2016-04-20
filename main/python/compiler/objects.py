@@ -49,109 +49,83 @@ class FunctionStatement(Statement):
         self.return_type = return_type
         self.name = name
         self.parameters = parameters
-        self.body = body[0]
+        self.body = body
+        context.functions[0] = self
+        self.signature = name + '(' + ','.join(t for t, n in parameters) + '):' + return_type
 
-        print(return_type, name, parameters, body[0])
-        self.body_size = len(body[0])
-        print(self.body_size)
-        # self.main = return_type == 'void' and name == 'main' and parameters is None
+
+        # print(return_type, name, parameters, body[0])
+        # self.body_size = len(body[0])
+
+        # if return_type == 'void':
+        #     self.tail = []
+        # else:
+        #     self.tail = []
+        self.var = context.variables.new(self, 'Function<%s>' % self.signature)
+        self.number_of_used_vars = 0
+
+        self.used_vars = [
+
+        ]
+
+    def dump_used_vars(self, context, used_vars):
+        b = []
+        for n, var in enumerate(used_vars):
+            assert isinstance(var, Variable)
+
+            if var.type.startswith('Function'):
+                b += [
+                    'dup',
+                    format(n, '04x'),
+                    'aload', var.number,
+                    'aastore',
+                ]
+            else:
+                b += [
+                    'dup',
+                    format(n, '04x'),
+                    'aload', var.number,
+                    'invokestatic', context.constant_pull['Integer.valueOf'],
+                    'aastore',
+                ]
+
+        return b
 
     def __len__(self):
-        return 0
+        return 7
+
+    @property
+    def len(self):
+        return sum(len(i) for i in self.body)
+
+    def r(self, context):
+        return list(itertools.chain(*[i.resolve(context) for i in self.body]))
+
+    def resolve(self, context):
+
+        return [
+            'sipush', format(len(self.used_vars) + 1, '04x'),
+            'anewarray', context.constant_pull['Object class'],
+            'astore', self.var.number
+        ]
+
+
+class FunctionCallStatement(Statement):
+    def __init__(self, context, name, parameters, position):
+        super().__init__(context, 'void', position)
+        sp = name + '(' + ','.join(e.type for e in parameters) + ')'
+        self.signature = sp + '->?'
+
+        print(self.signature)
+        print(context.variables)
+
+    def __len__(self):
+        return 4
 
     def resolve(self, context):
         return [
-            'sipush', '00', '05',
-            'anewarray', context.constant_pull['Object class'],
-            'astore_1',
-
-            'sipush', '00', '05',
-            'newarray', '0a',
-            'astore_0',
-
-            'aload_0',             # ref
-            'sipush', '00', '00',  # index
-            'sipush', format(256 * 256 - 3 - 30, '04x'),  # value
-            'iastore',             # store
-
-            'aload_1',
-            'sipush', '00', '00',  # index
-            'jsr', '0006',
-
-            'goto', format(3 + 6, '04x'),  # goto x
-                   'astore_3',
-                   'aload_3',
-
-                   'aastore',
-                   # 'nop',
-
-                   'goto', format(3 + 22, '04x'),  # goto 1
-
-            'nop',  # <- gotoX
-
-            'nop',
-            'nop',
-            'nop',
-            'nop',
-
-        ] + self.body.resolve(context) + [
-            'nop',
-            'nop',
-            'nop',
-            'nop',
-
-            'goto', format(3 + 16, '04x'),  # goto 2
-            'nop',
-            'nop',  # <- goto 1
-            'nop',
-            'nop',
-
-            'aload_0',             # ref
-            'sipush', '00', '00',  # index
-            'iaload',              # load
-
-
-            # 'nop', 'nop',
-            # 'nop', 'nop',
-            # 'nop', 'nop',
-            # 'bipush', 'a7',  # value
-            # 'bipush', 'ff',  # value
-            # 'bipush', 'e0',  # value
-
-
-            # 'goto', 'ffe5',
-
-            'aload_1',             # ref
-            'sipush', '00', '00',  # index
-            'aaload',  # load
-            'ret', '02',
-            'nop',
-            'nop',
-            'nop',
-            'nop',
-            'nop',  # <- goto 2
-            'nop',
-            'nop',
-            'nop',
-            'nop',
-            'nop',
-            'nop',
-            'nop',
-            'nop',
-            'nop',
-
-            'nop',
-            'nop',
-
-            'nop',
-            'nop',
-
-            'nop',
-            'nop',
-
-            'nop',
-            'nop',
-
+            'iconst_0',
+            'jsr', 'f_call_w2',
         ]
 
 
@@ -448,6 +422,9 @@ class Variable:
     def resolve(self, _=None):
         return ['i' + 'load', self.number]
 
+    def __str__(self):
+        return "({}) {} : {}".format(self.number, self.type, self.name)
+
 
 class Variables:
     def __init__(self, _, previous):
@@ -488,6 +465,9 @@ class Variables:
 
         return self._previous[item]
 
+    def __str__(self):
+        return '\n'.join(str(x) for x in self._current.values()) + ('----\n' + self._previous if self._previous is not None else '')
+
 
 class Context:
     def __init__(self, source, cp):
@@ -495,6 +475,8 @@ class Context:
         self.source = source
         self.constant_pull = cp
         self.variables = Variables(self, None)
+        self.functions = dict()
+        self.get_stream_size = 32
 
     def push(self, p):
         self.variables = Variables(self, self.variables)
@@ -504,3 +486,38 @@ class Context:
 
         if self.variables is None:
             raise CompileError(self, p[0], p[1], 'Unexpectedly empty context')
+
+    def build_functions_table(self):
+        number_of_functions = len(self.functions)
+        full_bodies_length = sum(f.len + 3 for f in self.functions.values())
+
+        switch_size = 9 + number_of_functions * 8 + full_bodies_length + 2
+
+        self.get_stream_size = switch_size  # todo
+
+        table = ''
+        tmp_size = 0
+        for n, f in sorted(self.functions.items()):
+            table += format(n, '08x')
+            tmp_size += f.len + 3
+            table += format(9 + 8 * number_of_functions + (full_bodies_length - tmp_size), '08x')
+
+        bodies = []
+        tmp_size = full_bodies_length
+        for n, f in sorted(self.functions.items()):
+            tmp_size -= f.len + 3
+            bodies += f.r(self)
+            bodies += ['goto', format(tmp_size + 3, '04x')]
+
+        return [
+               'goto', format(3 + 3 + switch_size + 2, '04x'),
+               'nop', 'nop', 'nop', 'swap',
+               # jump here
+               'lookupswitch',
+               format(switch_size - 2, '08x'),      # def
+               format(number_of_functions, '08x'),  # num of functions
+               table,
+        ] + bodies + [
+            'astore_0',
+            'ret', '00'
+        ]
