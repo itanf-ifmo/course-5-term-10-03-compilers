@@ -75,7 +75,7 @@ call_arguments returns [v] locals [s = list()] :
         (',' expr {$s.append($expr.v)})*
     ')' {$v=$s};
 
-variable_declaration_andassignment returns [v] : TYPE t=ID '=' expr {$v = DeclareAndAssignVariableStatement(self.context, $TYPE.text, $t.text, $expr.v, ($t.line, $t.pos))} ;
+variable_declaration_andassignment returns [v] : varType t=ID '=' expr {$v = DeclareAndAssignVariableStatement(self.context, $varType.v, $t.text, $expr.v, ($t.line, $t.pos))} ;
 
 assignment returns [v] : ID t='=' expr {$v = AssignVariableStatement(self.context, $ID.text, $expr.v, ($t.line, $t.pos))} ;
 
@@ -120,12 +120,21 @@ scope returns [v]
     : s='{' '}' {$v=ScopeStatement(self.context, [], ($s.line, $s.pos))}
     | s='{' {self.context.push('s', ($s.line, $s.pos))} body {$v=ScopeStatement(self.context, $body.v, ($s.line, $s.pos))} e='}' {self.context.pop(($e.line, $e.pos))};
 
-variable_declaration returns [v] : t=TYPE ID {$v = DeclareVariableStatement(self.context, $t.text, $ID.text, ($ID.line, $ID.pos))} ;
-function_declaration returns [v] : function_type fn=function_name function_parameters s='{' {self.context.push('f', ($s.line, $s.pos))} body e='}' {self.context.pop(($e.line, $e.pos))}
-    {$v = FunctionStatement(self.context, $function_type.text, $fn.text, $function_parameters.v, $body.v, ($s.line, $s.pos))} ;
+variable_declaration returns [v] : t=varType ID {$v = DeclareVariableStatement(self.context, $t.v, $ID.text, ($ID.line, $ID.pos))} ;
+function_declaration returns [v] :
+    funcType
+    fn=ID
+    function_parameters s='{'
+        {self.context.push('f', ($s.line, $s.pos))}
+            {self.context.push_func_params($function_parameters.v)}
+            body
+        {self.context.pop(($s.line, $s.pos))}
+    '}'
 
-returnW: 'return' expr? ;
+    {$v = FunctionStatement(self.context, $funcType.v, $fn.text, $function_parameters.v, $body.v, ($s.line, $s.pos))}
+    ;
 
+//returnW: 'return' expr? ;
 
 while_expr returns [v] : w='while' e=expr s=seq {$v = WhileStatement(self.context, $e.v, $s.v, ($w.line, $w.pos))};
 if_expr returns [v]
@@ -133,16 +142,33 @@ if_expr returns [v]
     | i='if' e=expr t=seq {$v = IfStatement(self.context, $e.v, $t.v, None, ($i.line, $i.pos))}
     ;
 
-function_type : TYPE | 'void' ;
-function_name : ID ;
-
 function_parameters returns [v] locals [s = list()] :
     '('
-        (    TYPE ID {$s.append(($TYPE.text, $ID.text))})?
-        (',' TYPE ID {$s.append(($TYPE.text, $ID.text))})*
+        (    varType ID {$s.append(($varType.v, $ID.text))})?
+        (',' varType ID {$s.append(($varType.v, $ID.text))})*
     ')' {$v = $s};
 
-TYPE : 'int' | 'bool' ;
+funcType returns [v]
+    : varType  {$v=$varType.v}
+    | 'void'   {$v='void'}
+    ;
+
+varType returns [v]
+    : 'int' {$v='int'}
+    | 'bool' {$v='bool'}
+    | functionalType {$v=$functionalType.v}
+    ;
+
+functionalType returns [v] locals [s = list()]:
+    '('
+        (varType {$s.append($varType.v)} | 'X' {$s.append('x')}) ?
+        (
+            ',' (varType {$s.append($varType.v)} | 'X' {$s.append('x')})
+        )*
+
+    ')->' funcType {$v = '(' + ','.join($s) + ')' + '->' + $funcType.v}
+    ;
+
 BOOL : 'true' | 'false' ;
 
 COMA : ',' ;

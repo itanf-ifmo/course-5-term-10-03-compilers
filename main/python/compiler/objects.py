@@ -50,17 +50,22 @@ class FunctionStatement(Statement):
         self.name = name
         self.parameters = parameters
         self.body = body
-        sp = name + '(' + ','.join(t for t, n in parameters) + ')'
+        p = '(' + ','.join(t for t, n in parameters) + ')'
+        sp = name + p
 
-        self.signature = sp + ':' + return_type
+        self.signature = p + '->' + return_type
 
-        if sp in context.functions:
-            raise self.exception('functions with such signature already exists')
+        # if sp in context.functions:
+        #     raise self.exception('functions with such signature already exists')
+        if name in context.variables:
+            raise self.exception('function with name {} already defined!'.format(name))
 
         self.number = len(context.functions)
         context.functions[sp] = self
 
-        self.var = context.variables.new(sp, 'Function<%s>' % self.signature)
+        self.var = context.variables.new(name, self.signature)
+        # self.var = context.variables.new(sp, 'Function<%s>' % self.signature)
+
         self.seq = ['sipush', format(self.number, '04x')] + self.var.update(context)
 
     def __len__(self):
@@ -71,7 +76,15 @@ class FunctionStatement(Statement):
         return sum(len(i) for i in self.body)
 
     def r(self, context):
-        return list(itertools.chain(*[i.resolve(context) for i in self.body]))
+        context.push('fc', (0, 0))
+
+        for p_type, p_name in self.parameters:
+            context.variables.new(p_name, p_type)
+
+        r = list(itertools.chain(*[i.resolve(context) for i in self.body]))
+
+        context.pop((0, 0))
+        return r
 
     def resolve(self, context):
         return self.seq
@@ -80,23 +93,51 @@ class FunctionStatement(Statement):
 class FunctionCallStatement(Statement):
     def __init__(self, context, name, parameters, position):
         super().__init__(context, 'void', position)
-        sp = name + '(' + ','.join(e.type for e in parameters) + ')'
-        self.signature = sp + '->?'
+        t = '(' + ','.join(e.type for e in parameters) + ')'
+        sp = name + t
+        self.parameters = parameters
+        self.signature = t + '->?'
 
-        if sp not in context.variables:
+        # if sp not in context.variables:
+        if name not in context.variables:
             raise self.exception('unable to find function ' + self.signature)
 
-        self.var = context.variables[sp]
-        self.function = context.functions[sp]
-        self.seq = self.var.resolve(context)
+        # self.var = context.variables[sp]
+        self.var = context.variables[name]
+        if not self.var.type.startswith(t):
+            raise self.exception(
+                'Mismatch signatures of called function: expected {} but was {}'.format(self.var.type, self.signature)
+            )
 
-        print('fcall')
+        # self.function = context.functions[sp]
+
+        self.seq = self.var.resolve(context)
+        self.params_len = sum(9 + len(e) for e in parameters)
+
+        # for p_expr, (ep_type, ep_name) in zip(parameters):
 
     def __len__(self):
-        return len(self.seq) + 4
+        return self.params_len + len(self.seq) + 4
 
     def resolve(self, context):
-        return self.seq + [
+        params = []
+
+        n = context.variables.full_len
+        for expr in self.parameters[::-1]:
+            params += expr.resolve(context)
+
+        for e in self.parameters:
+            params += [
+                'getstatic', context.constant_pull['st'], '',
+                'swap',
+                'sipush', format(n, '04x'),
+                'swap',
+                'iastore',
+            ]
+
+            n += 1
+
+        return params + self.seq + [
             'sipush', format(context.variables.full_len, '04x'),
             'invokestatic', context.constant_pull['sw:(II)I'],
             'pop',
@@ -127,18 +168,18 @@ class PrintStatement(Statement):
 
         assert isinstance(expr, Statement)
         self.expr = expr
-        print(expr._position)
-        print(context.variables)
-        print()
+        # print(expr._position)
+        # print(context.variables)
+        # print()
 
     def __len__(self):
         return len(self.expr) + 3 + 3
 
     # noinspection PyTypeChecker
     def resolve(self, context):
-        print(self.expr._position)
-        print(context.variables)
-        print()
+        # print(self.expr._position)
+        # print(context.variables)
+        # print()
         t = context.constant_pull['println:(Z)V'] if self.expr.type == 'bool' else context.constant_pull['println:(I)V']
         return [
             'getstatic',
@@ -533,10 +574,6 @@ class Context:
         if self.variables is None:
             raise CompileError(self, p[0], p[1], 'Unexpectedly empty context')
 
-    @property
-    def current_context(self):
-        return self.stack[-1] if self.stack else None
-
     def build_functions_table(self):
         number_of_functions = len(self.functions)
         full_bodies_length = sum(f.len + 3 for f in self.functions.values())
@@ -569,3 +606,8 @@ class Context:
             'sipush', '0000',
             'ireturn',
         ]
+
+    def push_func_params(self, params):
+
+        for p_type, p_name in params:
+            self.variables.new(p_name, p_type)
