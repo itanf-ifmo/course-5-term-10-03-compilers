@@ -252,11 +252,13 @@ class ConstantPull:
 
 
 class ByteCodeGenerator:
-    def __init__(self, cp, instr):
+    def __init__(self, cp, instr, sseq='1000'):
         self.cp = cp
-        self.seq = instr + 'b1'
+        self.seq = processAsm(['sipush', '0000', 'istore_1']) + instr + 'b1'
+        self.sseq = sseq + 'ac'
         self.max_stack = 1000
-        self.max_locals = 100  # todo
+        self.max_locals = 30000  # todo
+        self.max_locals_ = 30000  # todo
 
     def generate(self):
         code = ''
@@ -265,12 +267,14 @@ class ByteCodeGenerator:
         # code += '0000 0034'  # minor_version, major_version
         code += format(len(self.cp), '04x')
         code += str(self.cp)
-        code += '0020'  # access_flags
+        code += '0021'  # access_flags
         code += self.cp['this class']  # this_class
         code += self.cp['Object class']  # super_class
         code += '0000'  # interfaces_count
-        code += '0000'  # fields_count
-        code += '0001'  # methods_count
+
+        code += self._generate_fields()
+
+        code += '0003'  # methods_count
 
         # main method
         code += '0009'  # mask
@@ -280,9 +284,73 @@ class ByteCodeGenerator:
         code += self.cp['code section']
         code += self._generate_code_section()
 
+        # static init
+        code += self._generate_static_init_method()
+
+        # switch method
+        code += self._generate_switch_method()
+
         code += '0000'  # class attributes_count
 
         return [int(i + j, 16) for i, j in list(zip(code[::2], code[1::2]))]
+
+    def _generate_fields(self):
+        code = '0001'  # fields_count
+
+        code += '001a'  # ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+        code += self.cp['String: stack']  # name: stack
+        code += self.cp['[I']  # type: [ I
+        code += '0000'  # attributes_count
+        return code
+
+    def _generate_static_init_method(self):
+        m = '0008'  # ACC_STATIC
+        m += self.cp['<clinit>']  # name: stack
+        m += self.cp['()V']  # type: [ I
+        m += '0001'  # attributes_count
+
+        m += self.cp['code section']
+
+        code = ''
+        code += format(1, '04x')
+        code += format(0, '04x')
+
+        seq = processAsm([
+            'sipush', format(self.max_locals_, '04x'),
+            'newarray', '0a',
+            'putstatic', self.cp['Field stack'],
+            'return'
+        ])
+
+        code += format(len(seq) // 2, '08x')  # code size
+        code += seq
+        code += '0000'  # ??
+        code += '0000'  # no attributes
+
+        m += format(len(code) // 2, '08x') + code
+
+        return m
+
+    def _generate_switch_method(self):
+        m = '000a'  # ACC_PRIVATE, ACC_STATIC
+        m += self.cp['sw']
+        m += self.cp['(II)I']
+        m += '0001'  # attributes_count
+
+        m += self.cp['code section']
+
+        code = ''
+        code += format(100, '04x')  # todo
+        code += format(3, '04x')  # todo
+
+        code += format(len(self.sseq) // 2, '08x')  # code size
+        code += self.sseq
+        code += '0000'  # ??
+        code += '0000'  # no attributes
+
+        m += format(len(code) // 2, '08x') + code
+
+        return m
 
     def _generate_code_section(self):
         code_section = ''
@@ -305,11 +373,12 @@ for i, b, a in bytecode:
 
 def processAsm(seq):
     res = ''
+    c = 0
     for s in seq:
         if isinstance(s, LambdaType):
-            res += s(256 * 256 - len(res) // 2 + 7)
+            res += s(256 * 256 - len(res) // 2 + 5)
         elif s == 'f_call_w2':
-            res += format(256 * 256 - len(res) // 2 + 7, '04x')
+            res += format(256 * 256 - len(res) // 2 + 5 + c, '04x')
         elif s not in toByte:
             res += s
         else:
@@ -318,5 +387,5 @@ def processAsm(seq):
     return res
 
 
-def compile(c, seq):
-    return ByteCodeGenerator(c.constant_pull, processAsm(seq)).generate()
+def compile(c, seq, sseq):
+    return ByteCodeGenerator(c.constant_pull, processAsm(seq), processAsm(sseq)).generate()

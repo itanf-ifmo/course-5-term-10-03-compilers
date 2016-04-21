@@ -118,13 +118,14 @@ declarations returns [v]
 
 scope returns [v]
     : s='{' '}' {$v=ScopeStatement(self.context, [], ($s.line, $s.pos))}
-    | s='{' {self.context.push(($s.line, $s.pos))} body {$v=ScopeStatement(self.context, $body.v, ($s.line, $s.pos))} e='}' {self.context.pop(($e.line, $e.pos))};
+    | s='{' {self.context.push('s', ($s.line, $s.pos))} body {$v=ScopeStatement(self.context, $body.v, ($s.line, $s.pos))} e='}' {self.context.pop(($e.line, $e.pos))};
 
 variable_declaration returns [v] : t=TYPE ID {$v = DeclareVariableStatement(self.context, $t.text, $ID.text, ($ID.line, $ID.pos))} ;
-function_declaration returns [v] : function_type fn=function_name function_parameters t='{' body '}'
-    {$v = FunctionStatement(self.context, $function_type.text, $fn.text, $function_parameters.v, $body.v, ($t.line, $t.pos))} ;
+function_declaration returns [v] : function_type fn=function_name function_parameters s='{' {self.context.push('f', ($s.line, $s.pos))} body e='}' {self.context.pop(($e.line, $e.pos))}
+    {$v = FunctionStatement(self.context, $function_type.text, $fn.text, $function_parameters.v, $body.v, ($s.line, $s.pos))} ;
 
 returnW: 'return' expr? ;
+
 
 while_expr returns [v] : w='while' e=expr s=seq {$v = WhileStatement(self.context, $e.v, $s.v, ($w.line, $w.pos))};
 if_expr returns [v]
@@ -153,6 +154,7 @@ ID : ALPHA (ALPHA | DIGIT | '_')* ;
 //WS : [ \t\r\n]+ -> skip ; // skip spaces, tabs, newlines
 
 COMMENT : '/*' .*? '*/' ->  channel(HIDDEN) ;
+LINE_COMMENT : ('#' | '//') ~( '\r' | '\n' )* ->  channel(HIDDEN) ;
 WS : [ \t\r\n]+ ->  channel(HIDDEN) ;
 
 fragment ALPHA : [a-zA-Z] ;

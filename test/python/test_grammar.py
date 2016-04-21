@@ -316,6 +316,36 @@ class TestVariables(unittest.TestCase):
     def test_complex2(self):
         self.base('int b = 10; int a = 1 + 2; b = 3; int c = a * a % b; c >>', '0')
 
+    def test_complex3(self):
+        self.base('''
+
+        int a = 1;
+        int b = 2;
+
+        a + b >>;
+        {
+            int c = 4;
+            int d = 5;
+
+            a + b >>;
+            a + b + c + d >>;
+
+            {
+                int e = 7;
+                int g = 8;
+                int f = 9;
+
+                a + b >>;
+                a + b + c + d >>;
+                a + b + c + d + e + f + g >>;
+            };
+
+            a + b + c + d >>;
+        };
+
+        a + b >>;
+        ''', '3 3 12 3 12 36 12 3')
+
 
 class TestScope(unittest.TestCase):
     def base(self, src, expected_output):
@@ -425,6 +455,51 @@ class TestWhile(unittest.TestCase):
         self.base('int a = 10; while a { a = a - 1; a >> }; -1 >>', '9 8 7 6 5 4 3 2 1 0 -1')
 
 
+class TestComments(unittest.TestCase):
+    def base(self, src, expected_output):
+        stdout, stderr, rc = test(compiler(src))
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(expected_output, stdout)
+
+    def test_block(self):
+        self.base('''
+        1>>;
+        /*
+        2>>;
+        3>>;
+        */
+        4>>;
+        ''', '1 4')
+
+    def test_line_slashes(self):
+        self.base('''
+        1>>;
+        // 2>>;
+        3>>;
+        // 4>>;
+        ''', '1 3')
+
+    def test_line_sharp(self):
+        self.base('''
+        # 1>>;
+        2>>;
+        # 3>>;
+        4>>;
+        ''', '2 4')
+
+    def test_at_the_end_of_instruction(self):
+        self.base('''
+        1>>; # 2>>;
+        3>>; // 4>>;
+        ''', '1 3')
+
+    def test_inline(self):
+        self.base('''
+        1 + 2 /* *4 */ >>
+        ''', '3')
+
+
 class TestFunctions(unittest.TestCase):
     def base(self, src, expected_output):
         stdout, stderr, rc = test(compiler(src))
@@ -432,10 +507,135 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(expected_output, stdout)
 
-    def test_false(self):
-        self.base('void main(int a) {1>>} ; main(1, !!1)', '1')
+    def test_empty_function(self):
+        self.base('void a() {} ; a()', '')
 
-    # def test_once(self):
+    def test_once(self):
+        self.base('void a() {1>>} ; a()', '1')
+
+    def test_double_call(self):
+        self.base('int a() {1>>} ; a(); a()', '1 1')
+
+    def test_two_functions(self):
+        self.base('void a() {1>>}; int b() {2>>} ; a(); b() ', '1 2')
+
+    def test_function_not_defined(self):
+        self.assertRaisesRegex(objects.CompileError, 'unable to find function', compiler, 'a();')
+
+    def test_tow_function_reverse_order(self):
+        self.base('void a() {1>>}; int b() {2>>}; b() ; a()', '2 1')
+
+    def test_more_functions(self):
+        self.base('void a() {1>>}; int b() {2>>}; bool c() {3>>}; a() ; b() ; c()', '1 2 3')
+
+    def test_overloading(self):
+        self.base('void a() {1>>}; int a(int c) {2>>}; a() ; a(1)', '1 2')
+
+    def test_duplicate(self):
+        msg = 'functions with such signature already exists'
+        self.assertRaisesRegex(objects.CompileError, msg, compiler, 'void a() {}; int a() {}')
+
+    def test_same_name_as_variable(self):
+        self.base('int a = 0; void a(){ a >> }; a(); a = a + 1; a>>', '0 1')
+
+    def test_f1(self):
+        self.base('void f() { int a }; int a', '')
+
+    def test_f2(self):
+        self.base('void f() { int a = 2; int b = 3; a>>; b>> }; int a2 = 0; a2>>; f(); a2 >>', '0 2 3 0')
+
+    def test_f3(self):
+        self.base('''
+        void g() {
+            int a = 4;
+            int b = 5;
+            a>>;
+            b>>
+        };
+
+        int a2 = 0;
+        void f() {
+            int a = 2;
+            int b = 3;
+            a>>;
+
+            g();
+
+            b>>;
+            a2>>;
+            a2 = a2 + 1
+        };
+
+        a2>>;
+        f();
+        a2>>
+        ''', '0 2 4 5 3 0 1')
+
+    def test_f4(self):
+        self.base('''
+        void g() {
+            int a = 4;
+            int b = 5;
+            a>>;                  // 5
+            b>>;                  // 6
+        };
+
+        int a2 = 0;
+        void f() {
+            int a = 2;
+            int b = 3;
+            a>>;                  // 13
+            {
+                int a = -1;
+                int c = 8;
+                int d = 9;
+
+
+                c + d + a >> ;
+                g();
+
+                c + d + a >> ;
+            };
+
+            b>>;
+            a2>>;
+            a2 = a2 + 1
+        };
+
+        a2>>;
+        f();
+        a2>>
+        ''', '0 2 16 4 5 16 3 0 1')
+
+    # def test_f3(self):
+    #     self.base('void f() { >> 1 }; F<():void> a = f; a >>', '1')
+
+    def test_call_function_from_function(self):
+        self.base('void f(){ 1>> }; void g(){ f(); }; g();', '1')
+
+    # def test_f3(self):
+    #     self.base('void f() { >> 1 }; F<():void> a = f; a >>', '1')
+    #
+    # def test_f3(self):
+    #     self.base('void f() { >> 1 }; F<():void> a = f; a >>', '1')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # def test_once(self):
     #     self.base('bool a = true; a>>; while a { 1 >>; a = false}; a>>', 'true 1 false')
     #
     # def test_many_times(self):

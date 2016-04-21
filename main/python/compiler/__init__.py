@@ -49,16 +49,31 @@ def compiler(source):
     cp.putNameAndType('println(Z)V', 'println', '(Z)V')
     cp.putMethodref('println:(Z)V', 'PrintStream class', 'println(Z)V')
 
-    cp['Integer class name'] = 'java/lang/Integer'
-    cp.putClass('Integer class', 'Integer class name')
+    cp['String: stack'] = 'stack'
+    cp['[I'] = '[I'
 
-    cp['valueOf'] = 'valueOf'
-    cp['(I)Ljava/lang/Integer'] = '(I)Ljava/lang/Integer'
-    cp.putNameAndType('valueOf:(I)Ljava/lang/Integer', 'valueOf', '(I)Ljava/lang/Integer')
-    cp.putMethodref('Integer.valueOf', 'Integer class', 'valueOf:(I)Ljava/lang/Integer')
+    cp['<clinit>'] = '<clinit>'
+    cp['()V'] = '()V'
+
+    cp.putNameAndType('stack:[I', 'String: stack', '[I')
+    cp.putFieldref('Field stack', 'this class', 'stack:[I')
+    cp.putFieldref('st', 'this class', 'stack:[I')
+
+    cp['sw'] = 'sw'
+    cp['(II)I'] = '(II)I'
+    cp.putNameAndType('sw(II)I', 'sw', '(II)I')
+    cp.putMethodref('sw:(II)I', 'this class', 'sw(II)I')
+
+    # cp['Integer class name'] = 'java/lang/Integer'
+    # cp.putClass('Integer class', 'Integer class name')
+
+    # cp['valueOf'] = 'valueOf'
+    # cp['(I)Ljava/lang/Integer'] = '(I)Ljava/lang/Integer'
+    # cp.putNameAndType('valueOf:(I)Ljava/lang/Integer', 'valueOf', '(I)Ljava/lang/Integer')
+    # cp.putMethodref('Integer.valueOf', 'Integer class', 'valueOf:(I)Ljava/lang/Integer')
 
     c = Context(source, cp)
 
     seq = CompilerParser.CompilerParser.parse(source, c)
-    byte_code = bytemap.compile(c, c.build_functions_table() + seq)
+    byte_code = bytemap.compile(c, seq, c.build_functions_table())
     return bytearray(byte_code)

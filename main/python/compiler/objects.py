@@ -50,49 +50,21 @@ class FunctionStatement(Statement):
         self.name = name
         self.parameters = parameters
         self.body = body
-        context.functions[0] = self
-        self.signature = name + '(' + ','.join(t for t, n in parameters) + '):' + return_type
+        sp = name + '(' + ','.join(t for t, n in parameters) + ')'
 
+        self.signature = sp + ':' + return_type
 
-        # print(return_type, name, parameters, body[0])
-        # self.body_size = len(body[0])
+        if sp in context.functions:
+            raise self.exception('functions with such signature already exists')
 
-        # if return_type == 'void':
-        #     self.tail = []
-        # else:
-        #     self.tail = []
-        self.var = context.variables.new(self, 'Function<%s>' % self.signature)
-        self.number_of_used_vars = 0
+        self.number = len(context.functions)
+        context.functions[sp] = self
 
-        self.used_vars = [
-
-        ]
-
-    def dump_used_vars(self, context, used_vars):
-        b = []
-        for n, var in enumerate(used_vars):
-            assert isinstance(var, Variable)
-
-            if var.type.startswith('Function'):
-                b += [
-                    'dup',
-                    format(n, '04x'),
-                    'aload', var.number,
-                    'aastore',
-                ]
-            else:
-                b += [
-                    'dup',
-                    format(n, '04x'),
-                    'aload', var.number,
-                    'invokestatic', context.constant_pull['Integer.valueOf'],
-                    'aastore',
-                ]
-
-        return b
+        self.var = context.variables.new(sp, 'Function<%s>' % self.signature)
+        self.seq = ['sipush', format(self.number, '04x')] + self.var.update(context)
 
     def __len__(self):
-        return 7
+        return len(self.seq)
 
     @property
     def len(self):
@@ -102,12 +74,7 @@ class FunctionStatement(Statement):
         return list(itertools.chain(*[i.resolve(context) for i in self.body]))
 
     def resolve(self, context):
-
-        return [
-            'sipush', format(len(self.used_vars) + 1, '04x'),
-            'anewarray', context.constant_pull['Object class'],
-            'astore', self.var.number
-        ]
+        return self.seq
 
 
 class FunctionCallStatement(Statement):
@@ -116,16 +83,23 @@ class FunctionCallStatement(Statement):
         sp = name + '(' + ','.join(e.type for e in parameters) + ')'
         self.signature = sp + '->?'
 
-        print(self.signature)
-        print(context.variables)
+        if sp not in context.variables:
+            raise self.exception('unable to find function ' + self.signature)
+
+        self.var = context.variables[sp]
+        self.function = context.functions[sp]
+        self.seq = self.var.resolve(context)
+
+        print('fcall')
 
     def __len__(self):
-        return 4
+        return len(self.seq) + 4
 
     def resolve(self, context):
-        return [
-            'iconst_0',
-            'jsr', 'f_call_w2',
+        return self.seq + [
+            'sipush', format(context.variables.full_len, '04x'),
+            'invokestatic', context.constant_pull['sw:(II)I'],
+            'pop',
         ]
 
 
@@ -153,19 +127,26 @@ class PrintStatement(Statement):
 
         assert isinstance(expr, Statement)
         self.expr = expr
+        print(expr._position)
+        print(context.variables)
+        print()
 
     def __len__(self):
         return len(self.expr) + 3 + 3
 
     # noinspection PyTypeChecker
     def resolve(self, context):
+        print(self.expr._position)
+        print(context.variables)
+        print()
+        t = context.constant_pull['println:(Z)V'] if self.expr.type == 'bool' else context.constant_pull['println:(I)V']
         return [
-                   'getstatic',
-                   context.constant_pull['System.out.PrintStream'],
-               ] + self.expr.resolve(context) + [
-                   'invokevirtual',
-                   context.constant_pull['println:(Z)V'] if self.expr.type == 'bool' else context.constant_pull['println:(I)V'],
-               ]
+            'getstatic',
+            context.constant_pull['System.out.PrintStream'],
+        ] + self.expr.resolve(context) + [
+            'invokevirtual',
+            t,
+        ]
 
 
 class OperatorStatement(Statement):
@@ -270,11 +251,15 @@ class DeclareVariableStatement(Statement):
             raise self.exception("Variable {} already defined in this scope".format(name))
 
         context.variables.new(name, t)
+        self.name = name
+        self.t = t
 
     def __len__(self):
         return 0
 
     def resolve(self, context):
+        context.variables.new(self.name, self.t)
+
         return []
 
 
@@ -288,7 +273,7 @@ class GetVariableStatement(Statement):
         self._type = variable.type
 
         self.variable = variable
-        self.seq = self.variable.resolve()
+        self.seq = self.variable.resolve(context)
 
     def __len__(self):
         return len(self.seq)
@@ -313,7 +298,7 @@ class AssignVariableStatement(Statement):
 
         self.variable = variable
         self.expr = expr
-        self.seq = self.variable.update()
+        self.seq = self.variable.update(context)
 
     def __len__(self):
         return len(self.expr) + len(self.seq)
@@ -339,14 +324,17 @@ class DeclareAndAssignVariableStatement(Statement):
 
         self.variable = variable
         self.expr = expr
-        self.seq = self.variable.update()
+        self.seq = self.variable.update(context)
+        self.name = name
+        self.t = t
 
     def __len__(self):
         return len(self.expr) + len(self.seq)
 
     def resolve(self, context):
-        return self.expr.resolve(context) + \
-               self.seq
+        context.variables.new(self.name, self.t)
+
+        return self.expr.resolve(context) + self.seq
 
 
 class IfStatement(Statement):
@@ -407,44 +395,101 @@ class ScopeStatement(Statement):
         return sum(len(i) for i in self.body)
 
     def resolve(self, context):
-        return list(itertools.chain(*[i.resolve(context) for i in self.body]))
+        context.push('s', (0, 0))
+        r = list(itertools.chain(*[i.resolve(context) for i in self.body]))
+        context.pop((0, 0))
+        return r
 
 
 class Variable:
-    def __init__(self, t, name, number):
+    def __init__(self, cl, t, name, number):
         self.type = t
         self.name = name
-        self.number = format(number, '02x')
+        self.number = format(number, '04x')
+        self.closure = cl
 
-    def update(self):
-        return ['i' + 'store', self.number]
+    def update(self, context):
+        if self.is_global:
+            # print('g', self, self.number)
 
-    def resolve(self, _=None):
-        return ['i' + 'load', self.number]
+            return [
+                'getstatic', context.constant_pull['st'], '',
+                'swap',
+                'sipush', self.number, '',
+                'swap',
+                'iastore',
+            ]
+
+        # print('l', self, self.number)
+        return [
+            'getstatic', context.constant_pull['st'], '',
+            'swap',
+            'sipush', self.number, '', 'iload_1', 'iadd',
+            'swap',
+            'iastore',
+        ]
+
+    def resolve(self, context):
+        if self.is_global:
+            # print('g', self, self.number)
+
+            return [
+                'getstatic', context.constant_pull['st'], '',
+                'sipush', self.number, '',
+                'iaload',
+            ]
+
+        # print('l', self, self.number)
+        return [
+            'getstatic', context.constant_pull['st'], '',
+            'sipush', self.number, '', 'iload_1', 'iadd',
+            'iaload',
+        ]
+
+    @property
+    def is_global(self):
+        return self.closure.is_global
 
     def __str__(self):
         return "({}) {} : {}".format(self.number, self.type, self.name)
 
 
 class Variables:
-    def __init__(self, _, previous):
+    def __init__(self, context, previous, s):
         # todo count locals
         self._previous = previous
         self._current = {}
+        self._context = context
+        self._s = s
 
     @property
     def current_scope(self):
         return self._current
 
     def new(self, name, t):
-        self._current[name] = Variable(t, name, len(self))
+        self._current[name] = Variable(self, t, name, len(self))
         return self._current[name]
+
+    @property
+    def is_global(self):
+        return self._previous is None
+
+    @property
+    def number_of_non_global_vars(self):
+        return 0 if self.is_global else (len(self._current) + self._previous.number_of_non_global_vars)
 
     @property
     def previous(self):
         return self._previous
 
+    @property
+    def full_len(self):
+        return (0 if self._previous is None else self._previous.full_len) + len(self._current)
+
     def __len__(self):
+        if self._s == 'f':
+            return len(self._current)
+
         return (0 if self._previous is None else len(self._previous)) + len(self._current)
 
     def __contains__(self, item):
@@ -466,7 +511,8 @@ class Variables:
         return self._previous[item]
 
     def __str__(self):
-        return '\n'.join(str(x) for x in self._current.values()) + ('----\n' + self._previous if self._previous is not None else '')
+        return '------ ' + self._s + ' ------\n' + '\n'.join(str(x) for x in self._current.values()) +\
+               ('\n' + str(self._previous) if self._previous is not None else '') + '\n============\n'
 
 
 class Context:
@@ -474,18 +520,22 @@ class Context:
         self.file = None
         self.source = source
         self.constant_pull = cp
-        self.variables = Variables(self, None)
+        self.variables = Variables(self, None, 'g')
         self.functions = dict()
         self.get_stream_size = 32
 
-    def push(self, p):
-        self.variables = Variables(self, self.variables)
+    def push(self, t, _):
+        self.variables = Variables(self, self.variables, t)
 
     def pop(self, p):
         self.variables = self.variables.previous
 
         if self.variables is None:
             raise CompileError(self, p[0], p[1], 'Unexpectedly empty context')
+
+    @property
+    def current_context(self):
+        return self.stack[-1] if self.stack else None
 
     def build_functions_table(self):
         number_of_functions = len(self.functions)
@@ -497,27 +547,25 @@ class Context:
 
         table = ''
         tmp_size = 0
-        for n, f in sorted(self.functions.items()):
+        for n, f in sorted((f.number, f) for f in self.functions.values()):
             table += format(n, '08x')
+            table += format(9 + 8 * number_of_functions + tmp_size, '08x')
             tmp_size += f.len + 3
-            table += format(9 + 8 * number_of_functions + (full_bodies_length - tmp_size), '08x')
 
         bodies = []
         tmp_size = full_bodies_length
-        for n, f in sorted(self.functions.items()):
+        for n, f in sorted((f.number, f) for f in self.functions.values()):
             tmp_size -= f.len + 3
             bodies += f.r(self)
             bodies += ['goto', format(tmp_size + 3, '04x')]
 
         return [
-               'goto', format(3 + 3 + switch_size + 2, '04x'),
-               'nop', 'nop', 'nop', 'swap',
-               # jump here
-               'lookupswitch',
-               format(switch_size - 2, '08x'),      # def
-               format(number_of_functions, '08x'),  # num of functions
-               table,
+            'nop', 'nop', 'nop', 'nop', 'nop', 'nop', 'iload_0',
+            'lookupswitch',
+            format(switch_size - 2, '08x'),      # def
+            format(number_of_functions, '08x'),  # num of functions
+            table,
         ] + bodies + [
-            'astore_0',
-            'ret', '00'
+            'sipush', '0000',
+            'ireturn',
         ]
