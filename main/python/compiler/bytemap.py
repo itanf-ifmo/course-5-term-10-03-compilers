@@ -257,7 +257,7 @@ class ByteCodeGenerator:
         self.seq = processAsm(['sipush', '0000', 'istore_1']) + instr + 'b1'
         self.sseq = sseq + 'ac'
         self.max_stack = 1000
-        self.max_locals = 30000  # todo
+        self.max_locals = 4  # todo
         self.max_locals_ = 30000  # todo
 
     def generate(self):
@@ -340,8 +340,8 @@ class ByteCodeGenerator:
         m += self.cp['code section']
 
         code = ''
-        code += format(100, '04x')  # todo
-        code += format(4, '04x')  # todo
+        code += format(100, '04x')
+        code += format(4, '04x')
 
         code += format(len(self.sseq) // 2, '08x')  # code size
         code += self.sseq

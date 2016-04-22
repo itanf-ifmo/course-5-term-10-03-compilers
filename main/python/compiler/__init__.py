@@ -1,3 +1,5 @@
+import os
+
 from compiler import bytemap
 from compiler.antlr import CompilerParser
 from compiler.bytemap import ConstantPull
@@ -5,11 +7,11 @@ from compiler.objects import Context, CompileError
 from compiler.settings import *
 
 
-def compiler(source):
+def _compiler(source, name='A', file_name=None):
     cp = ConstantPull()
     cp['code section'] = 'Code'
     cp['StackMapTable section'] = 'StackMapTable'
-    cp['this class name'] = 'A'
+    cp['this class name'] = name
     cp['Object class name'] = 'java/lang/Object'
     cp.putClass('this class', 'this class name')
     cp.putClass('Object class', 'Object class name')
@@ -73,7 +75,15 @@ def compiler(source):
     # cp.putMethodref('Integer.valueOf', 'Integer class', 'valueOf:(I)Ljava/lang/Integer')
 
     c = Context(source, cp)
+    c.file = file_name
 
     seq = CompilerParser.CompilerParser.parse(source, c)
     byte_code = bytemap.compile(c, seq, c.build_functions_table())
     return bytearray(byte_code)
+
+
+def build(path_to_file):
+    d = os.path.dirname(path_to_file)
+    n = '.'.join(os.path.basename(path_to_file).split('.')[:-1])
+    data = _compiler(open(path_to_file, 'r').read(), n, path_to_file)
+    open(os.path.join(d, n + '.class'), 'wb').write(data)

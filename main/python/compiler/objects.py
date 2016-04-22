@@ -273,9 +273,6 @@ class PrintStatement(Statement):
 
     # noinspection PyTypeChecker
     def resolve(self, context):
-        # print(self.expr._position)
-        # print(context.variables)
-        # print()
         t = context.constant_pull['println:(Z)V'] if self.expr.type == 'bool' else context.constant_pull['println:(I)V']
         return [
             'getstatic',
@@ -284,6 +281,87 @@ class PrintStatement(Statement):
             'invokevirtual',
             t, '',
         ]
+
+
+class ReadStatement(Statement):
+    def __init__(self, context, variable_name, position):
+        super().__init__(context, 'void', position)
+
+        if variable_name not in context.variables:
+            raise self.exception('Undefined variable {}'.format(context.variables))
+
+        self.var = context.variables[variable_name]
+
+        self.update_seq = self.var.update(context)
+
+        read_seq = [
+            'getstatic',
+            context.constant_pull['System.in.InputStream'], '',
+            'invokevirtual',
+            context.constant_pull['read:()I'], ''
+        ]
+
+        if self.var.type == 'int':
+            self.seq = [
+                'bipush', '01',
+                'istore_3',
+                'bipush', '00',
+                'bipush', '00',
+                'pop',
+            ] + read_seq + [
+                'dup',
+                'bipush', format(45, '02x'),
+                'if_icmpne', format(6, '04x'), '',
+                'bipush', 'ff',
+                'istore_3',
+                'dup',
+                'bipush', format(48, '02x'),
+                'if_icmplt', format(256 * 256 - (2 + 1) - (6 + 1) - 9, '04x'), '',
+                'dup',
+                'bipush', format(57, '02x'),
+                'if_icmpgt', format(256 * 256 - (2 + 1) - (6 + 1) - 6 - 9, '04x'), '',
+                'bipush', format(48, '02x'),
+                'isub',
+                'iadd',
+                'bipush', format(10, '02x'),
+                'imul',
+            ] + read_seq + [
+                'dup',
+                'bipush', format(48, '02x'),
+                'if_icmplt', format(12, '04x'), '',
+                'dup',
+                'bipush', format(57, '02x'),
+                'if_icmpgt', format(6, '04x'), '',
+                'goto', format(256 * 256 - 25, '04x'), '',
+                'pop',
+                'bipush', format(10, '02x'),
+                'idiv',
+                'iload_3',
+                'imul',
+            ]
+        elif self.var.type == 'bool':
+            self.seq = read_seq + [
+                'dup',
+                'bipush', format(116, '02x'),
+                'if_icmpne', format(9, '04x'), '',
+                'pop',
+                'bipush', '01',
+                'goto', format(3 + 2 + 3 + 2, '04x'), '',
+                'bipush', format(102, '02x'),
+                'if_icmpne', format(256 * 256 - 2 - 3 - 2 - 1 - 3 - 2 - 1 - 6, '04x'), '',
+                'bipush', '00',
+                'nop',
+            ]
+        else:
+            raise self.exception('Could not read variable of type {}'.format(self.var.type))
+
+        self.seq += self.update_seq
+
+    def __len__(self):
+        return len(self.seq)
+
+    def resolve(self, context):
+        return self.seq
 
 
 class OperatorStatement(Statement):

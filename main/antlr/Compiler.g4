@@ -68,8 +68,13 @@ expr returns [v]
     | <assoc=right> e=expr a=call_arguments {$v = FunctionExprCallStatement(self.context, $e.v, $a.v, $e.v._position).call_from_expression()}
     ;
 
-func_call returns [v] : n=ID a=call_arguments {$v = FunctionCallStatement(self.context, $n.text, $a.v, ($n.line, $n.pos))} ;
-func_expr_call returns [v] : e=expr a=call_arguments {$v = FunctionExprCallStatement(self.context, $e.v, $a.v, $e.v._position)} ;
+func_call returns [v]
+    : n=ID a=call_arguments {$v = FunctionCallStatement(self.context, $n.text, $a.v, ($n.line, $n.pos))}
+    ;
+
+func_expr_call returns [v]
+    : e=expr a=call_arguments {$v = FunctionExprCallStatement(self.context, $e.v, $a.v, $e.v._position)}
+    ;
 
 
 call_arguments returns [v] locals [s = list()] :
@@ -78,27 +83,35 @@ call_arguments returns [v] locals [s = list()] :
         (',' expr {$s.append($expr.v)})*
     ')' {$v=$s};
 
-variable_declaration_andassignment returns [v] : varType t=ID '=' expr {$v = DeclareAndAssignVariableStatement(self.context, $varType.v, $t.text, $expr.v, ($t.line, $t.pos))} ;
+variable_declaration_andassignment returns [v]
+    : varType t=ID '=' expr {$v = DeclareAndAssignVariableStatement(self.context, $varType.v, $t.text, $expr.v, ($t.line, $t.pos))}
+    ;
 
-assignment returns [v] : ID t='=' expr {$v = AssignVariableStatement(self.context, $ID.text, $expr.v, ($t.line, $t.pos))} ;
+assignment returns [v]
+    : ID t='=' expr {$v = AssignVariableStatement(self.context, $ID.text, $expr.v, ($t.line, $t.pos))}
+    ;
 
-write returns [v]: expr t='>>' {$v = PrintStatement(self.context, $expr.v, ($t.line, $t.pos))};
-read : '>>' ID ;
+write returns [v]
+    : expr t='>>' {$v = PrintStatement(self.context, $expr.v, ($t.line, $t.pos))}
+    | t='print' expr {$v = PrintStatement(self.context, $expr.v, ($t.line, $t.pos))}
+    ;
 
-//write : 'print ' expr {print('print ', $expr.v)};
-//read : 'read' ID ;
+read returns [v]
+    : t='>>' ID {$v = ReadStatement(self.context, $ID.text, ($t.line, $t.pos))}
+    | t='read' ID {$v = ReadStatement(self.context, $ID.text, ($t.line, $t.pos))}
+    ;
 
 seq returns [v]
-    : assignment {$v = $assignment.v}
-    | write {$v = $write.v}
-//    | read {$v=$read.v}
-    | scope {$v = $scope.v}
-    | if_expr {$v = $if_expr.v}
-    | while_expr {$v = $while_expr.v}
-    | func_call {$v = $func_call.v}
+    : assignment     {$v = $assignment.v}
+    | write          {$v = $write.v}
+    | read           {$v=$read.v}
+    | scope          {$v = $scope.v}
+    | if_expr        {$v = $if_expr.v}
+    | while_expr     {$v = $while_expr.v}
+    | func_call      {$v = $func_call.v}
     | func_expr_call {$v = $func_expr_call.v}
-    | t=PASS {$v = PassStatement(self.context, ($t.line, $t.pos))}
-    | returnW {$v = $returnW.v}
+    | PASS           {$v = PassStatement(self.context, ($PASS.line, $PASS.pos))}
+    | returnW        {$v = $returnW.v}
     ;
 
 returnW returns [v]
@@ -127,7 +140,10 @@ scope returns [v]
     : s='{' '}' {$v=ScopeStatement(self.context, [], ($s.line, $s.pos))}
     | s='{' {self.context.push('s', ($s.line, $s.pos))} body {$v = ScopeStatement(self.context, $body.v, ($s.line, $s.pos))} e='}' {self.context.pop(($e.line, $e.pos))};
 
-variable_declaration returns [v] : t=varType ID {$v = DeclareVariableStatement(self.context, $t.v, $ID.text, ($ID.line, $ID.pos))} ;
+variable_declaration returns [v]
+    : t=varType ID {$v = DeclareVariableStatement(self.context, $t.v, $ID.text, ($ID.line, $ID.pos))}
+    ;
+
 function_declaration returns [v] :
     funcReturnType
     fn=ID
@@ -141,9 +157,10 @@ function_declaration returns [v] :
     {$v = FunctionStatement(self.context, $funcReturnType.v, $fn.text, $function_parameters.v, $body.v, ($s.line, $s.pos))}
     ;
 
-//returnW: 'return' expr? ;
+while_expr returns [v]
+    : w='while' e=expr s=seq {$v = WhileStatement(self.context, $e.v, $s.v, ($w.line, $w.pos))}
+    ;
 
-while_expr returns [v] : w='while' e=expr s=seq {$v = WhileStatement(self.context, $e.v, $s.v, ($w.line, $w.pos))};
 if_expr returns [v]
     : i='if' e=expr t=seq 'else' f=seq {$v = IfStatement(self.context, $e.v, $t.v, $f.v, ($i.line, $i.pos))}
     | i='if' e=expr t=seq {$v = IfStatement(self.context, $e.v, $t.v, None, ($i.line, $i.pos))}
@@ -176,15 +193,16 @@ functionalType returns [v] locals [s = list()]:
     ')->' funcReturnType {$v = '(' + ','.join($s) + ')' + '->' + $funcReturnType.v}
     ;
 
-BOOL : 'true' | 'false' ;
+BOOL
+    : 'true'
+    | 'false'
+    ;
 
 COMA : ',' ;
 PASS : 'pass' ;
 
 INT : DIGIT+ ;
 ID : ALPHA (ALPHA | DIGIT | '_')* ;
-//COMMENT : '/*' .*? '*/' -> skip ;
-//WS : [ \t\r\n]+ -> skip ; // skip spaces, tabs, newlines
 
 COMMENT : '/*' .*? '*/' ->  channel(HIDDEN) ;
 LINE_COMMENT : ('#' | '//') ~( '\r' | '\n' )* ->  channel(HIDDEN) ;

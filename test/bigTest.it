@@ -1,0 +1,23 @@
+void power() {
+    int k;
+    int n;
+    >>n ;
+    >>k ;
+
+    int r = 1;
+
+    while k > 0 {
+        if (k % 2 == 1) {
+            r = r * n
+        } else {
+            pass
+        };
+
+        n = n * n;
+        k = k / 2
+    };
+
+    r >>;
+};
+
+power();

@@ -3,7 +3,7 @@ from subprocess import Popen, PIPE
 import unittest
 
 from compiler.settings import *
-from compiler import compiler, objects
+from compiler import _compiler, objects, build
 
 
 def test(byte_code, stdin=None):
@@ -14,7 +14,7 @@ def test(byte_code, stdin=None):
     p = Popen(["java", "A"], stdin=PIPE, stdout=PIPE, stderr=PIPE, close_fds=True, cwd=OUTPUT_DIR)
 
     if stdin:
-        p.stdin.write(stdin)
+        p.stdin.write(stdin.encode())
 
     o, e = p.communicate()
     return o.decode("utf-8").strip().replace('\n', ' '), e.decode("utf-8").strip(), p.returncode
@@ -23,7 +23,7 @@ def test(byte_code, stdin=None):
 # @unittest.skip("demonstrating skipping")
 class TestBooleans(unittest.TestCase):
     def base(self, src, expected_output):
-        stdout, stderr, rc = test(compiler(src))
+        stdout, stderr, rc = test(_compiler(src))
         self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(expected_output, stdout)
@@ -59,7 +59,7 @@ class TestBooleans(unittest.TestCase):
         self.base('! -1 >>', 'true')
 
     def test_minus_true(self):
-        self.assertRaisesRegex(objects.CompileError, 'Unexpected unary operator for boolean expression: -', compiler, '- true >>')
+        self.assertRaisesRegex(objects.CompileError, 'Unexpected unary operator for boolean expression: -', _compiler, '- true >>')
 
     def test_true_or_true(self):
         self.base('true or true >>', 'true')
@@ -119,12 +119,12 @@ class TestBooleans(unittest.TestCase):
         self.base('true or false and true >>', 'true')
 
     def test_true_plus_true(self):
-        self.assertRaisesRegex(objects.CompileError, 'Unexpected operator for boolean parameters: +', compiler, 'true + true >>')
+        self.assertRaisesRegex(objects.CompileError, 'Unexpected operator for boolean parameters: +', _compiler, 'true + true >>')
 
 
 class TestBasics(unittest.TestCase):
     def base(self, src, expected_output):
-        stdout, stderr, rc = test(compiler(src))
+        stdout, stderr, rc = test(_compiler(src))
         self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(expected_output, stdout)
@@ -132,10 +132,16 @@ class TestBasics(unittest.TestCase):
     def test_empty(self):
         self.base('', '')
 
+    def test_pass(self):
+        self.base('pass', '')
+
+    def test_pass_in_if(self):
+        self.base('if true pass else pass', '')
+
 
 class TestNumbers(unittest.TestCase):
     def base(self, src, expected_output):
-        stdout, stderr, rc = test(compiler(src))
+        stdout, stderr, rc = test(_compiler(src))
         self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(expected_output, stdout)
@@ -209,7 +215,7 @@ class TestNumbers(unittest.TestCase):
 
 class TestComparison(unittest.TestCase):
     def base(self, src, expected_output):
-        stdout, stderr, rc = test(compiler(src))
+        stdout, stderr, rc = test(_compiler(src))
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual(expected_output, stdout)
@@ -251,7 +257,7 @@ class TestComparison(unittest.TestCase):
         self.base('2 <= 2 >>', 'true')
 
     def test_true_le_two(self):
-        self.assertRaisesRegex(objects.CompileError, 'Type of operand mismatches: bool <= int', compiler, 'true <= 2 >>')
+        self.assertRaisesRegex(objects.CompileError, 'Type of operand mismatches: bool <= int', _compiler, 'true <= 2 >>')
 
     def test_true_le_true(self):
         self.base('true <= true >>', 'true')
@@ -262,7 +268,7 @@ class TestComparison(unittest.TestCase):
 
 class TestVariables(unittest.TestCase):
     def base(self, src, expected_output):
-        stdout, stderr, rc = test(compiler(src))
+        stdout, stderr, rc = test(_compiler(src))
         self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(expected_output, stdout)
@@ -271,7 +277,7 @@ class TestVariables(unittest.TestCase):
         self.base('int a', '')
 
     def test_already_defined(self):
-        self.assertRaisesRegex(objects.CompileError, 'Variable a already defined', compiler, 'int a; int a;')
+        self.assertRaisesRegex(objects.CompileError, 'Variable a already defined', _compiler, 'int a; int a;')
 
     def test_int_a__int_b(self):
         self.base('int a;int b;', '')
@@ -295,7 +301,7 @@ class TestVariables(unittest.TestCase):
         self.base('int a; a = 1; a>>', '1')
 
     def test_one__int_a__print(self):
-        self.assertRaisesRegex(objects.CompileError, 'Variable a is not defined', compiler, 'a = 1')
+        self.assertRaisesRegex(objects.CompileError, 'Variable a is not defined', _compiler, 'a = 1')
 
     def test_reassign(self):
         self.base('int a; a = 1; a>>; a = 2; a>>', '1 2')
@@ -308,7 +314,7 @@ class TestVariables(unittest.TestCase):
 
     def test_bool_var_number_expr(self):
         msg = "Type bool of variable a doesn't matches expression type int"
-        self.assertRaisesRegex(objects.CompileError, msg, compiler, 'bool a; a = 1')
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'bool a; a = 1')
 
     def test_complex(self):
         self.base('int b; int a; a = 1 + 2; b = 2; int c; c = a * a / b; c >>', '4')
@@ -349,7 +355,7 @@ class TestVariables(unittest.TestCase):
 
 class TestScope(unittest.TestCase):
     def base(self, src, expected_output):
-        stdout, stderr, rc = test(compiler(src))
+        stdout, stderr, rc = test(_compiler(src))
         self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(expected_output, stdout)
@@ -367,10 +373,10 @@ class TestScope(unittest.TestCase):
         self.base('int a = 1; a>>; {a>>}; a>>', '1 1 1')
 
     def test_use_var_out_of_scope(self):
-        self.assertRaisesRegex(objects.CompileError, 'Variable a is not defined', compiler, '{int a = 0; a>>}; a>>')
+        self.assertRaisesRegex(objects.CompileError, 'Variable a is not defined', _compiler, '{int a = 0; a>>}; a>>')
 
     def test_already_defined_in_scope(self):
-        self.assertRaisesRegex(objects.CompileError, 'Variable a already defined', compiler, '{int a; int a}')
+        self.assertRaisesRegex(objects.CompileError, 'Variable a already defined', _compiler, '{int a; int a}')
 
     def test_overriding_variable(self):
         self.base('int a = 1; a>>; {int a = 0; a>>}; a>>', '1 0 1')
@@ -381,7 +387,7 @@ class TestScope(unittest.TestCase):
 
 class TestIfCondition(unittest.TestCase):
     def base(self, src, expected_output):
-        stdout, stderr, rc = test(compiler(src))
+        stdout, stderr, rc = test(_compiler(src))
         self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(expected_output, stdout)
@@ -429,7 +435,7 @@ class TestIfCondition(unittest.TestCase):
         self.base('if 1 true >> else false >>', 'true')
 
     def test_declare_var_in_condition(self):
-        self.assertRaisesRegex(objects.ParseError, 'no viable alternative at input', compiler, 'if false int a = 1')
+        self.assertRaisesRegex(objects.ParseError, 'no viable alternative at input', _compiler, 'if false int a = 1')
 
     def test_set_var_in_if(self):
         self.base('int a = 1; a>>; if a - 1 {a = 4; 1>>} else {a = 3; 2>>}; a>>', '1 2 3')
@@ -440,7 +446,7 @@ class TestIfCondition(unittest.TestCase):
 
 class TestWhile(unittest.TestCase):
     def base(self, src, expected_output):
-        stdout, stderr, rc = test(compiler(src))
+        stdout, stderr, rc = test(_compiler(src))
         self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(expected_output, stdout)
@@ -457,7 +463,7 @@ class TestWhile(unittest.TestCase):
 
 class TestComments(unittest.TestCase):
     def base(self, src, expected_output):
-        stdout, stderr, rc = test(compiler(src))
+        stdout, stderr, rc = test(_compiler(src))
         self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(expected_output, stdout)
@@ -502,7 +508,7 @@ class TestComments(unittest.TestCase):
 
 class TestFunctions(unittest.TestCase):
     def base(self, src, expected_output):
-        stdout, stderr, rc = test(compiler(src))
+        stdout, stderr, rc = test(_compiler(src))
         self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(expected_output, stdout)
@@ -520,7 +526,7 @@ class TestFunctions(unittest.TestCase):
         self.base('void a() {1>>}; int b() {2>>} ; a(); b() ', '1 2')
 
     def test_function_not_defined(self):
-        self.assertRaisesRegex(objects.CompileError, 'unable to find function', compiler, 'a();')
+        self.assertRaisesRegex(objects.CompileError, 'unable to find function', _compiler, 'a();')
 
     def test_tow_function_reverse_order(self):
         self.base('void a() {1>>}; int b() {2>>}; b() ; a()', '2 1')
@@ -533,7 +539,7 @@ class TestFunctions(unittest.TestCase):
 
     def test_duplicate(self):
         msg = 'function with name a already defined'
-        self.assertRaisesRegex(objects.CompileError, msg, compiler, 'void a() {}; int a() {}')
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'void a() {}; int a() {}')
 
     # def test_same_name_as_variable(self):  # temporary disabled
     #     self.base('int a = 0; void a(){ a >> }; a(); a = a + 1; a>>', '0 1')
@@ -622,10 +628,10 @@ class TestFunctions(unittest.TestCase):
 
     def test_check_signatures(self):
         msg = 'Error: Mismatch signatures of called function: expected \(int,bool\)\-\>void but was \(int,int\)\-\>\?'
-        self.assertRaisesRegex(objects.CompileError, msg, compiler, 'void a(int c, bool v) { }; a(1, 1); ')
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'void a(int c, bool v) { }; a(1, 1); ')
 
     # def test_param_name_are_same(self):
-    #     self.assertRaisesRegex(objects.CompileError, '', compiler, 'void a(int a) {}')
+    #     self.assertRaisesRegex(objects.CompileError, '', _compiler, 'void a(int a) {}')
 
     def test_return_void(self):
         self.base('''
@@ -639,15 +645,15 @@ class TestFunctions(unittest.TestCase):
 
     def test_type_check_return(self):
         msg = 'Error: This function should return void but found int'
-        self.assertRaisesRegex(objects.CompileError, msg, compiler, 'void a() { return 1 }')
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'void a() { return 1 }')
 
     def test_void_in_expr(self):
         msg = 'Error: could not print void at'
-        self.assertRaisesRegex(objects.CompileError, msg, compiler, 'void a() { }; a() >>')
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'void a() { }; a() >>')
 
     def test_wrong_type_in_expr(self):
         msg = 'Error: Type of operand mismatches: bool \+ int'
-        self.assertRaisesRegex(objects.CompileError, msg, compiler, 'bool a() { }; a() + 1 >>')
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'bool a() { }; a() + 1 >>')
 
     def test_return_to_expr(self):
         self.base('int a() { return 3 }; a() + 1 >>', '4')
@@ -672,7 +678,7 @@ class TestFunctions(unittest.TestCase):
 
 class TestHigherOrderFunctions(unittest.TestCase):
     def base(self, src, expected_output):
-        stdout, stderr, rc = test(compiler(src))
+        stdout, stderr, rc = test(_compiler(src))
         self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual('', stderr, 'Expect empty stderr')
         self.assertEqual(expected_output, stdout)
@@ -763,6 +769,44 @@ class TestHigherOrderFunctions(unittest.TestCase):
 
         c(g(c(1), c(2))(c(1)) * 10) >>;
         ''', '5 31')
+
+
+class TestRead(unittest.TestCase):
+    def base(self, src, expected_output, input_stream):
+        stdout, stderr, rc = test(_compiler(src), input_stream)
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(expected_output, stdout)
+
+    def test_read(self):
+        self.base('int a; >> a; a>>', '1', '1')
+
+    def test_read_two(self):
+        self.base('int a; int b; >> a; >>b; a + b>>', '3', '1 2')
+
+    def test_read_negative(self):
+        self.base('int a; >> a; a>>', '-1', '-1')
+
+    def test_read_two_more_spaces(self):
+        self.base('int a; int b; >> a; >>b; a + b>>', '3', '   1    2')
+
+    def test_read_two_more_spaces_big_numbers(self):
+        self.base('int a; int b; >> a; >>b; a + b>>', '53566866', '   32333233    21233633')
+
+    def test_read_bool_true(self):
+        self.base('bool a; >> a; a>>', 'true', ' t  ')
+
+    def test_read_bool_false(self):
+        self.base('bool a; >> a; a>>', 'false', ' f ')
+
+    def test_read_two_bools(self):
+        self.base('bool a; bool b; >> a; >>b; a>>; b>>', 'true false', ' t f ')
+
+
+class BigTests(unittest.TestCase):
+    # noinspection PyMethodMayBeStatic
+    def test_big_file(self):
+        build(os.path.join(os.path.dirname(__file__), '..', 'bigTest.it'))
 
 
 if __name__ == '__main__':
