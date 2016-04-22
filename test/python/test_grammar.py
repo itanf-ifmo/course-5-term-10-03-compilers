@@ -624,8 +624,50 @@ class TestFunctions(unittest.TestCase):
         msg = 'Error: Mismatch signatures of called function: expected \(int,bool\)\-\>void but was \(int,int\)\-\>\?'
         self.assertRaisesRegex(objects.CompileError, msg, compiler, 'void a(int c, bool v) { }; a(1, 1); ')
 
-        # def test_param_name_are_same(self):
+    # def test_param_name_are_same(self):
     #     self.assertRaisesRegex(objects.CompileError, '', compiler, 'void a(int a) {}')
+
+    def test_return_void(self):
+        self.base('''
+        void a() {
+          return;
+          1>>
+        };
+
+        a();
+        ''', '')
+
+    def test_type_check_return(self):
+        msg = 'Error: This function should return void but found int'
+        self.assertRaisesRegex(objects.CompileError, msg, compiler, 'void a() { return 1 }')
+
+    def test_void_in_expr(self):
+        msg = 'Error: could not print void at'
+        self.assertRaisesRegex(objects.CompileError, msg, compiler, 'void a() { }; a() >>')
+
+    def test_wrong_type_in_expr(self):
+        msg = 'Error: Type of operand mismatches: bool \+ int'
+        self.assertRaisesRegex(objects.CompileError, msg, compiler, 'bool a() { }; a() + 1 >>')
+
+    def test_return_to_expr(self):
+        self.base('int a() { return 3 }; a() + 1 >>', '4')
+
+    def test_return_default_int(self):
+        self.base('int a() { true>> }; a() >>', 'true 0')
+
+    def test_return_default_bool(self):
+        self.base('bool a() { 1>> }; a() >>', '1 false')
+
+    def test_bug_ret_from_if(self):
+        self.base('''
+        int h(int b) {
+          if b == 1
+            return 1
+        };
+
+        h(1) >>;
+        h(-1) >>;
+        ''', '1 0')
 
 
 class TestHigherOrderFunctions(unittest.TestCase):
@@ -689,6 +731,38 @@ class TestHigherOrderFunctions(unittest.TestCase):
         h(f, -2);
 
         ''', '7 -1 6 -2')
+
+    def test_return_func(self):
+        self.base('''
+        void f(int a) { a + 1>> };
+        void g(int b) { b + 2>> };
+
+        (int)->void h(int b) {
+          if b == 1
+            return f
+          else
+            return g
+        };
+
+        h(333)(1);
+        h(1)(1);
+
+        (int)->void a = h(333);
+        a(4);
+        ''', '3 2 6')
+
+    def test_return_func_to_expr(self):
+        self.base('''
+        int c(int a) { return a + 1 };
+        int f(int a) { return a + 1 };
+
+        (int)->int g(int a, int b) {
+          a + b >>;
+          return f;
+        };
+
+        c(g(c(1), c(2))(c(1)) * 10) >>;
+        ''', '5 31')
 
 
 if __name__ == '__main__':

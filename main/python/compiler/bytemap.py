@@ -341,7 +341,7 @@ class ByteCodeGenerator:
 
         code = ''
         code += format(100, '04x')  # todo
-        code += format(3, '04x')  # todo
+        code += format(4, '04x')  # todo
 
         code += format(len(self.sseq) // 2, '08x')  # code size
         code += self.sseq

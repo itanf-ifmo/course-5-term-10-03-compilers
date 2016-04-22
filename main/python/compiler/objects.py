@@ -94,30 +94,31 @@ class FunctionCallStatement(Statement):
     def __init__(self, context, name, parameters, position):
         super().__init__(context, 'void', position)
         t = '(' + ','.join(e.type for e in parameters) + ')'
-        sp = name + t
         self.parameters = parameters
         self.signature = t + '->?'
 
-        # if sp not in context.variables:
         if name not in context.variables:
             raise self.exception('unable to find function ' + self.signature)
 
-        # self.var = context.variables[sp]
         self.var = context.variables[name]
         if not self.var.type.startswith(t):
             raise self.exception(
                 'Mismatch signatures of called function: expected {} but was {}'.format(self.var.type, self.signature)
             )
 
-        # self.function = context.functions[sp]
+        self.return_type = self.var.type[len(t + '->'):]
 
         self.seq = self.var.resolve(context)
         self.params_len = sum(9 + len(e) for e in parameters)
+        self.tail = ['pop']
 
-        # for p_expr, (ep_type, ep_name) in zip(parameters):
+    def call_from_expression(self):
+        self.tail = []
+        self._type = self.return_type
+        return self
 
     def __len__(self):
-        return self.params_len + len(self.seq) + 4
+        return self.params_len + len(self.seq) + 3 + len(self.tail)
 
     def resolve(self, context):
         params = []
@@ -130,7 +131,7 @@ class FunctionCallStatement(Statement):
             params += [
                 'getstatic', context.constant_pull['st'], '',
                 'swap',
-                'sipush', format(n, '04x'),
+                'sipush', format(n, '04x'), '',
                 'swap',
                 'iastore',
             ]
@@ -138,10 +139,65 @@ class FunctionCallStatement(Statement):
             n += 1
 
         return params + self.seq + [
-            'sipush', format(context.variables.full_len, '04x'),
-            'invokestatic', context.constant_pull['sw:(II)I'],
-            'pop',
-        ]
+            'sipush', format(context.variables.full_len, '04x'), '',
+            'invokestatic', context.constant_pull['sw:(II)I'], '',
+        ] + self.tail
+
+
+class FunctionExprCallStatement(Statement):
+    def __init__(self, context, expr, parameters, position):
+        super().__init__(context, 'void', position)
+        assert isinstance(expr, Statement)
+
+        t = '(' + ','.join(e.type for e in parameters) + ')'
+        self.parameters = parameters
+        self.signature = t + '->?'
+
+        if not expr.type.startswith(t):
+            raise self.exception(
+                'Mismatch signatures of called function: expected {} but was {}'.format(self.var.type, self.signature)
+            )
+
+        self.return_type = expr.type[len(t + '->'):]
+
+        self.expr = expr
+        self.params_len = sum(9 + len(e) for e in parameters)
+        self.tail = ['pop']
+
+    def call_from_expression(self):
+        self.tail = []
+        self._type = self.return_type
+        return self
+
+    def __len__(self):
+        return self.params_len + len(self.expr) + 5 + len(self.tail)
+
+    def resolve(self, context):
+        params = []
+
+        n = context.variables.full_len
+        for expr in self.parameters[::-1]:
+            params += expr.resolve(context)
+
+        params2 = []
+        for e in self.parameters:
+            params2 += [
+                'getstatic', context.constant_pull['st'], '',
+                'swap',
+                'sipush', format(n, '04x'), '',
+                'swap',
+                'iastore',
+            ]
+
+            n += 1
+
+        return params + self.expr.resolve(context) + [
+            'istore_2',
+        ] + params2 + [
+            'iload_2',
+            'sipush', format(context.variables.full_len, '04x'), '',
+            'invokestatic', context.constant_pull['sw:(II)I'], '',
+        ] + self.tail
 
 
 class BoolStatement(Statement):
@@ -162,15 +218,55 @@ class BoolStatement(Statement):
         return 'iconst_1' if self.v else 'iconst_0'
 
 
+class ReturnStatement(Statement):
+    def __init__(self, context, expr, position):
+        super().__init__(context, 'void', position)
+        assert expr is None or isinstance(expr, Statement)
+        self.expr = expr
+
+        actual_return_type = 'void' if self.expr is None else self.expr.type
+        expected_return_type = context.variables.function_return_type
+        if expected_return_type != actual_return_type:
+            raise self.exception('This function should return {} but found {}'.format(
+                expected_return_type, actual_return_type
+            ))
+
+    def __len__(self):
+        return (len(self.expr) if self.expr is not None else 3) + 1
+
+    def resolve(self, context):
+        if self.expr:
+            return self.expr.resolve(context) + [
+                'ireturn'
+            ]
+        else:
+            return [
+                'sipush', '00', '00',
+                'ireturn'
+            ]
+
+
+class PassStatement(Statement):
+    def __init__(self, context, position):
+        super().__init__(context, 'void', position)
+
+    def __len__(self):
+        return 1
+
+    def resolve(self, context):
+        return [
+            'nop'
+        ]
+
+
 class PrintStatement(Statement):
     def __init__(self, context, expr, position):
         super().__init__(context, 'void', position)
 
         assert isinstance(expr, Statement)
         self.expr = expr
-        # print(expr._position)
-        # print(context.variables)
-        # print()
+        if expr.type == 'void':
+            raise self.exception('could not print void')
 
     def __len__(self):
         return len(self.expr) + 3 + 3
@@ -183,10 +279,10 @@ class PrintStatement(Statement):
         t = context.constant_pull['println:(Z)V'] if self.expr.type == 'bool' else context.constant_pull['println:(I)V']
         return [
             'getstatic',
-            context.constant_pull['System.out.PrintStream'],
+            context.constant_pull['System.out.PrintStream'], '',
         ] + self.expr.resolve(context) + [
             'invokevirtual',
-            t,
+            t, '',
         ]
 
 
@@ -200,12 +296,12 @@ class OperatorStatement(Statement):
         '+': ['iadd'],
         '-': ['isub'],
 
-        '<':  ['if_icmplt', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
-        '<=': ['if_icmple', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
-        '>':  ['if_icmpgt', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
-        '>=': ['if_icmpge', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
-        '==': ['if_icmpeq', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
-        '!=': ['if_icmpne', '0007', 'iconst_0', 'goto', '0004', 'iconst_1'],
+        '<':  ['if_icmplt', '00', '07', 'iconst_0', 'goto', '00', '04', 'iconst_1'],
+        '<=': ['if_icmple', '00', '07', 'iconst_0', 'goto', '00', '04', 'iconst_1'],
+        '>':  ['if_icmpgt', '00', '07', 'iconst_0', 'goto', '00', '04', 'iconst_1'],
+        '>=': ['if_icmpge', '00', '07', 'iconst_0', 'goto', '00', '04', 'iconst_1'],
+        '==': ['if_icmpeq', '00', '07', 'iconst_0', 'goto', '00', '04', 'iconst_1'],
+        '!=': ['if_icmpne', '00', '07', 'iconst_0', 'goto', '00', '04', 'iconst_1'],
 
         '&&': ['iand'],
         'and': ['iand'],
@@ -281,7 +377,7 @@ class ConstIntStatement(Statement):
 
         return [
             'ldc_w',
-            context.constant_pull['constant_' + str(self.i)]
+            context.constant_pull['constant_' + str(self.i)], ''
         ]
 
 
@@ -396,10 +492,10 @@ class IfStatement(Statement):
     def resolve(self, context):
         return self.expr.resolve(context) + [
             'ifne',
-            format(3 + self.fs + 3, '04x'),
+            format(3 + self.fs + 3, '04x'), '',
         ] + (self.false_seq.resolve(context) if self.false_seq is not None else []) + [
            'goto',
-           format(3 + self.ts, '04x'),
+           format(3 + self.ts, '04x'), '',
         ] + self.true_seq.resolve(context)
 
 
@@ -420,9 +516,9 @@ class WhileStatement(Statement):
     def resolve(self, context):
         return self.expr.resolve(context) + [
             'ifeq',
-            format(3 + self.seq_size + 3, '04x'),
+            format(3 + self.seq_size + 3, '04x'), '',
         ] + self.seq.resolve(context) + [
-           'goto',
+           'goto', '',
            format(256 * 256 - 3 - self.seq_size - self.expr_size, '04x'),
         ]
 
@@ -496,12 +592,13 @@ class Variable:
 
 
 class Variables:
-    def __init__(self, context, previous, s):
+    def __init__(self, context, previous, s, function_return_type):
         # todo count locals
         self._previous = previous
         self._current = {}
         self._context = context
         self._s = s
+        self._function_return_type = function_return_type
 
     @property
     def current_scope(self):
@@ -526,6 +623,16 @@ class Variables:
     @property
     def full_len(self):
         return (0 if self._previous is None else self._previous.full_len) + len(self._current)
+
+    @property
+    def function_return_type(self):
+        if self._function_return_type is not None:
+            return self._function_return_type
+
+        if self._previous is None:
+            return None
+
+        return self._previous.function_return_type
 
     def __len__(self):
         if self._s == 'f':
@@ -561,12 +668,12 @@ class Context:
         self.file = None
         self.source = source
         self.constant_pull = cp
-        self.variables = Variables(self, None, 'g')
+        self.variables = Variables(self, None, 'g', None)
         self.functions = dict()
         self.get_stream_size = 32
 
-    def push(self, t, _):
-        self.variables = Variables(self, self.variables, t)
+    def push(self, t, _, function_return_type=None):
+        self.variables = Variables(self, self.variables, t, function_return_type)
 
     def pop(self, p):
         self.variables = self.variables.previous
@@ -579,8 +686,6 @@ class Context:
         full_bodies_length = sum(f.len + 3 for f in self.functions.values())
 
         switch_size = 9 + number_of_functions * 8 + full_bodies_length + 2
-
-        self.get_stream_size = switch_size  # todo
 
         table = ''
         tmp_size = 0
