@@ -20,8 +20,44 @@ java file
 ```
 
 ## tests:
-unittests: `src/test/python/test_grammar.py`
+unittests: [`src/test/python/test_grammar.py`](src/test/python/test_grammar.py)
 
 
 #### notes:
-folder src/main/python/compiler/antlr contain pre-generated files. Source is `src/main/antlr/Compiler.g4`
+folder `src/main/python/compiler/antlr` contain pre-generated files. Source is [`src/main/antlr/Compiler.g4`](src/main/antlr/Compiler.g4)
+
+
+### example of source
+```
+int power() {
+    int k;
+    int n;
+    >>n ;
+    >>k ;
+
+    int r = 1;
+
+    while k > 0 {
+        if (k % 2 == 1) {
+            r = r * n
+        } else {
+            pass
+        };
+
+        n = n * n;
+        k = k / 2
+    };
+
+    return r
+};
+
+
+()->int a = power;
+
+()->int g(()->int f) {
+    return f
+};
+
+-g(a)() >>;
+
+```

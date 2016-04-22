@@ -21,16 +21,12 @@ class MyErrorListener(ErrorListener):
 
     def reportAmbiguity(self, recognizer, dfa, startIndex, stopIndex, exact, ambigAlts, configs):
         pass
-#        raise Exception("Oh no1!!")
 
     def reportAttemptingFullContext(self, recognizer, dfa, startIndex, stopIndex, conflictingAlts, configs):
         pass
-#        raise ParseError(self._context, 0, 0, str((recognizer, dfa, startIndex, stopIndex, conflictingAlts, configs)))
-#        raise Exception("Oh no2!!")
 
     def reportContextSensitivity(self, recognizer, dfa, startIndex, stopIndex, prediction, configs):
         pass
-#        raise Exception("Oh no3!!")
 }
 
 @parser::members {
@@ -54,7 +50,7 @@ expr returns [v]
     | func_call {$v = $func_call.v.call_from_expression()}
     | '(' e=expr ')' {$v=$e.v}
     | ID {$v = GetVariableStatement(self.context, $ID.text, ($ID.line, $ID.pos))}
-
+    | <assoc=right> e=expr a=call_arguments {$v = FunctionExprCallStatement(self.context, $e.v, $a.v, $e.v._position).call_from_expression()}
     // operators:
     |         o='-'                e =expr {$v = UnaryOperatorStatement(self.context, $o.text, $e.v, ($o.line, $o.pos))}
     | e1=expr o=('*'  | '/' | '%') e2=expr {$v = OperatorStatement(self.context, $e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
@@ -65,7 +61,6 @@ expr returns [v]
     |         o=('!'  | 'not')     e =expr {$v = UnaryOperatorStatement(self.context, $o.text, $e.v, ($o.line, $o.pos))}
     | e1=expr o=('&&' | 'and')     e2=expr {$v = OperatorStatement(self.context, $e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
     | e1=expr o=('||' | 'or')      e2=expr {$v = OperatorStatement(self.context, $e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
-    | <assoc=right> e=expr a=call_arguments {$v = FunctionExprCallStatement(self.context, $e.v, $a.v, $e.v._position).call_from_expression()}
     ;
 
 func_call returns [v]

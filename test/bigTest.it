@@ -1,4 +1,4 @@
-void power() {
+int power() {
     int k;
     int n;
     >>n ;
@@ -17,7 +17,14 @@ void power() {
         k = k / 2
     };
 
-    r >>;
+    return r
 };
 
-power();
+
+()->int a = power;
+
+()->int g(()->int f) {
+    return f 
+};
+
+-g(a)() >>;

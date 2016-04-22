@@ -770,6 +770,13 @@ class TestHigherOrderFunctions(unittest.TestCase):
         c(g(c(1), c(2))(c(1)) * 10) >>;
         ''', '5 31')
 
+    def test_return_func_to_expr2(self):
+        self.base('''
+        int b () { return 1 };
+        ()->int a(()->int f) { return f; };
+        -a(b)() >>;
+        ''', '-1')
+
 
 class TestRead(unittest.TestCase):
     def base(self, src, expected_output, input_stream):

@@ -21,16 +21,12 @@ class MyErrorListener(ErrorListener):
 
     def reportAmbiguity(self, recognizer, dfa, startIndex, stopIndex, exact, ambigAlts, configs):
         pass
-#        raise Exception("Oh no1!!")
 
     def reportAttemptingFullContext(self, recognizer, dfa, startIndex, stopIndex, conflictingAlts, configs):
         pass
-#        raise ParseError(self._context, 0, 0, str((recognizer, dfa, startIndex, stopIndex, conflictingAlts, configs)))
-#        raise Exception("Oh no2!!")
 
     def reportContextSensitivity(self, recognizer, dfa, startIndex, stopIndex, prediction, configs):
         pass
-#        raise Exception("Oh no3!!")
 
 
 # This class defines a complete listener for a parse tree produced by CompilerParser.
