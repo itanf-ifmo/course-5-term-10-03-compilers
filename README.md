@@ -9,7 +9,7 @@ pip install --user antlr4-python3-runtime
 
 #### to compile:
 ```bash
-cd src/main/python
+cd main/python
 python3 __init__.py /path/to/source/file.it
 ```
 
@@ -20,11 +20,11 @@ java file
 ```
 
 ## tests:
-unittests: [`src/test/python/test_grammar.py`](src/test/python/test_grammar.py)
+unittests: [`test/python/test_grammar.py`](test/python/test_grammar.py)
 
 
 #### notes:
-folder `src/main/python/compiler/antlr` contain pre-generated files. Source is [`src/main/antlr/Compiler.g4`](src/main/antlr/Compiler.g4)
+folder `main/python/compiler/antlr` contain pre-generated files. Source is [`main/antlr/Compiler.g4`](main/antlr/Compiler.g4)
 
 
 ### example of source
