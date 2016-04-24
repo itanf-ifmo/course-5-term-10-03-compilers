@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.org/itanf-ifmo/course-5-term-10-03-compilers.svg?branch=master)](https://travis-ci.org/itanf-ifmo/course-5-term-10-03-compilers)
+
+
 ### requirements:
 
 python3 with antlr4-python3-runtime library
