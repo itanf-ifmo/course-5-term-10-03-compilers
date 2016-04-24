@@ -2,3 +2,4 @@
 out
 main/python/compiler/antlr
 main/antlr/*.tokens
+*.class

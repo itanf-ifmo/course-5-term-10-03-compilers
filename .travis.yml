@@ -1,0 +1,14 @@
+language: python
+
+python:
+  - "3.4"
+
+install:
+  - pip install -r requirements.txt
+
+# command to run tests
+script:
+  - cd main
+  - bash -c "java -cp $(pwd)/bin/antlr-4.5.3-complete.jar org.antlr.v4.Tool ./antlr/Compiler.g4 -o ./python/compiler"
+  - export PYTHONPATH="${PYTHONPATH}:$(pwd)/python:$(pwd)/../test/python"
+  - python ../test/python/test_grammar.py
