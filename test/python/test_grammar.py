@@ -10,7 +10,9 @@ def test(byte_code, stdin=None):
     if not os.path.isdir(OUTPUT_DIR):
         os.mkdir(OUTPUT_DIR)
 
-    open(OUTPUT_FILE, 'wb').write(byte_code)
+    with open(OUTPUT_FILE, 'wb') as output_file:
+        output_file.write(byte_code)
+
     p = Popen(["java", "A"], stdin=PIPE, stdout=PIPE, stderr=PIPE, close_fds=True, cwd=OUTPUT_DIR)
 
     if stdin:
