@@ -811,6 +811,59 @@ class TestHigherOrderFunctions(unittest.TestCase):
         ''', '-1')
 
 
+class TestClosure(unittest.TestCase):
+    def base(self, src, expected_output):
+        stdout, stderr, rc = test(_compiler(src))
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(expected_output, stdout)
+
+    def test_base(self):
+        self.base('''
+        void f() {
+          void a() { 42 >> };
+          a();
+        };
+
+        f();
+
+        ''', '42')
+
+
+class TestLambda(unittest.TestCase):
+    def base(self, src, expected_output):
+        stdout, stderr, rc = test(_compiler(src))
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(expected_output, stdout)
+
+    def test_base(self):
+        self.base('''
+
+        (int)->void a = void(int a){ a>> };
+
+        a(2);
+
+        ''', '2')
+
+    def test_inline(self):
+        self.base('int(int a){ return a * a }(42) >>;', '1764')
+
+    def test_return_last_expr(self):
+        self.base('int(int a){ a * a }(-7) >>;', '49')
+
+    def test_return_last_expr_from_void_function(self):
+        self.base('void(int a){ a * a }(-7);', '')
+
+    def test_lambda_return_lambda(self):
+        self.base('()->void(){ return void(){42>>} }()();', '42')
+        self.base('()->void(){ void(){ 42>> } }()();', '42')
+
+    def test_lambda_return_lambda_return_lambda(self):
+        self.base('()->()->void(){ return ()->void(){return void(){42>>}} }()()();', '42')
+        self.base('()->()->int(){ ()->int(){ int(){ 42>>; 2 } } }()()() >>;', '42 2')
+
+
 class TestRead(unittest.TestCase):
     def base(self, src, expected_output, input_stream):
         stdout, stderr, rc = test(_compiler(src), input_stream)

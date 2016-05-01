@@ -1,4 +1,5 @@
 import itertools
+import random
 
 
 class CompilerError(BaseException):
@@ -63,6 +64,12 @@ class FunctionStatement(Statement):
     def __init__(self, context, return_type, name, parameters, body, position):
         super().__init__(context, 'undefined', position)
 
+        if name is None:
+            name = 'lambda<%d>' % random.randint(10 ** 5, 10 ** 6)
+            self.lambda_f = True
+        else:
+            self.lambda_f = False
+
         self.return_type = return_type
         self.name = name
         self.parameters = parameters
@@ -73,13 +80,20 @@ class FunctionStatement(Statement):
         self.signature = p + '->' + return_type
         self.number = len(context.functions)
 
-        if name in context.variables:
-            raise self.exception('function(or variable) with name {} already defined!'.format(name))
+        self._seq = ['sipush', format(self.number, '04x'), '']
 
-        self.variable = self.vars.new(name, self.signature)
+        if not self.lambda_f:
+            if name in context.variables:
+                raise self.exception('function(or variable) with name {} already defined!'.format(name))
+
+            self.variable = self.vars.new(name, self.signature)
+
+            self._seq += self.variable.update()
+
         context.functions[sp] = self
 
-        self._seq = ['sipush', format(self.number, '04x'), ''] + self.variable.update()
+        if self.return_type != 'void' and self.body and isinstance(self.body[-1], ExpressionStatement):
+            self.body[-1].used()
 
     def __len__(self):
         return len(self._seq)
@@ -92,7 +106,7 @@ class FunctionStatement(Statement):
         for i in self.body:
             i.typecheck()
 
-        self._type = 'void'
+        self._type = self.signature if self.lambda_f else 'void'
 
     def r(self):
         return list(itertools.chain(*[i.seq for i in self.body]))
@@ -165,6 +179,28 @@ class FunctionExprCallStatement(Statement):
             'sipush', format(self.vars.full_len, '04x'), '',
             'invokestatic', self.ctx.constant_pull['sw:(II)I'], '',
         ] + self.tail
+
+
+class ExpressionStatement(Statement):
+    def __init__(self, context, expr, position):
+        super().__init__(context, 'undefined', position)
+        assert isinstance(expr, Statement)
+        self.expr = expr
+        self.tail = ['pop']
+
+    def __len__(self):
+        return len(self.expr) + len(self.tail)
+
+    def used(self):
+        assert self.type == 'undefined'
+        self.tail = ['ireturn']
+
+    def typecheck(self):
+        self.expr.typecheck()
+        self._type = 'void' if self.tail else self.expr.type
+
+    def resolve(self):
+        return self.expr.seq + self.tail
 
 
 class BoolStatement(Statement):

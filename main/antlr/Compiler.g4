@@ -53,6 +53,7 @@ def parse(source, context):
 expr returns [v]
     : t=BOOL {$v = BoolStatement(self.context, $t.text == 'true', ($t.line, $t.pos))}
     | INT {$v = ConstIntStatement(self.context, $INT.int, ($INT.line, $INT.pos))}
+    | lambda_declaration {$v = $lambda_declaration.v}
     | '(' e=expr ')' {$v=$e.v}
     | ID {$v = GetVariableStatement(self.context, $ID.text, ($ID.line, $ID.pos))}
     | <assoc=right> e=expr a=call_arguments {$v = FunctionExprCallStatement(self.context, $e.v, $a.v, $e.v._position).call_from_expression()}
@@ -72,6 +73,18 @@ func_expr_call returns [v]
     : e=expr a=call_arguments {$v = FunctionExprCallStatement(self.context, $e.v, $a.v, $e.v._position)}
     ;
 
+lambda_declaration returns [v]
+    :
+    funcReturnType
+    function_parameters s='{'
+        {self.context.push('f', ($s.line, $s.pos), $funcReturnType.v)}
+            {self.context.push_func_params($function_parameters.v)}
+            body
+        {self.context.pop(($s.line, $s.pos))}
+    '}'
+
+    {$v = FunctionStatement(self.context, $funcReturnType.v, None, $function_parameters.v, $body.v, ($s.line, $s.pos))}
+    ;
 
 call_arguments returns [v] locals [s = list()] :
     '('
@@ -100,13 +113,14 @@ read returns [v]
 seq returns [v]
     : assignment     {$v = $assignment.v}
     | write          {$v = $write.v}
-    | read           {$v=$read.v}
+    | read           {$v = $read.v}
     | scope          {$v = $scope.v}
     | if_expr        {$v = $if_expr.v}
     | while_expr     {$v = $while_expr.v}
     | func_expr_call {$v = $func_expr_call.v}
     | PASS           {$v = PassStatement(self.context, ($PASS.line, $PASS.pos))}
     | returnW        {$v = $returnW.v}
+    | expr           {$v = ExpressionStatement(self.context, $expr.v, $expr.v._position)}
     ;
 
 returnW returns [v]
