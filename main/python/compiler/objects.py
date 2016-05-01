@@ -73,7 +73,6 @@ class FunctionStatement(Statement):
             raise self.exception('function(or variable) with name {} already defined!'.format(name))
 
         self.variable = self.vars.new(name, self.signature)
-
         context.functions[sp] = self
 
         self.seq = ['sipush', format(self.number, '04x'), ''] + self.variable.update()
@@ -91,7 +90,7 @@ class FunctionStatement(Statement):
 
         self._type = 'void'
 
-    def r(self, context):
+    def r(self):
         return list(itertools.chain(*[i.resolve(self.ctx) for i in self.body]))
 
     def resolve(self, context):
@@ -116,9 +115,10 @@ class FunctionExprCallStatement(Statement):
         return self
 
     def __len__(self):
-        return sum(9 + len(e) for e in self.parameters) + len(self.expr) + 5 + len(self.tail)
+        return sum(len(e) for e in self.parameters) + 1 + len(self.expr) + len(self.parameters) * 9 + 7 + len(self.tail)
 
     def typecheck(self):
+
         self.expr.typecheck()
 
         for p in self.parameters:
@@ -775,7 +775,6 @@ class Context:
         self.constant_pull = cp
         self.variables = Variables(self, None, 'g', None)
         self.functions = dict()
-        self.get_stream_size = 32
 
     def push(self, t, _, function_return_type=None):
         self.variables = Variables(self, self.variables, t, function_return_type)
@@ -790,26 +789,26 @@ class Context:
         number_of_functions = len(self.functions)
         full_bodies_length = sum(f.len + 3 for f in self.functions.values())
 
-        switch_size = 9 + number_of_functions * 8 + full_bodies_length + 2
+        switch_size = 1 + 8 + number_of_functions * (4 + 4) + full_bodies_length
 
         table = ''
-        tmp_size = 0
+        tmp_size = 1 + 8
         for n, f in sorted((f.number, f) for f in self.functions.values()):
             table += format(n, '08x')
-            table += format(9 + 8 * number_of_functions + tmp_size, '08x')
+            table += format(number_of_functions * (4 + 4) + tmp_size, '08x')
             tmp_size += f.len + 3
 
         bodies = []
         tmp_size = full_bodies_length
         for n, f in sorted((f.number, f) for f in self.functions.values()):
             tmp_size -= f.len + 3
-            bodies += f.r(self)
+            bodies += f.r()
             bodies += ['goto', format(tmp_size + 3, '04x')]
 
         return [
             'nop', 'nop', 'nop', 'nop', 'nop', 'nop', 'iload_0',
             'lookupswitch',
-            format(switch_size - 2, '08x'),      # def
+            format(switch_size, '08x'),      # def
             format(number_of_functions, '08x'),  # num of functions
             table,
         ] + bodies + [
