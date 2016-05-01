@@ -30,8 +30,12 @@ class Statement:
         self._type = t
         self._position = position
 
-    def resolve(self, context):
+    def resolve(self):
         return []
+
+    @property
+    def seq(self):
+        return self.resolve()
 
     def exception(self, msg):
         return CompileError(self._context, self._position[0], self._position[1], msg)
@@ -75,10 +79,10 @@ class FunctionStatement(Statement):
         self.variable = self.vars.new(name, self.signature)
         context.functions[sp] = self
 
-        self.seq = ['sipush', format(self.number, '04x'), ''] + self.variable.update()
+        self._seq = ['sipush', format(self.number, '04x'), ''] + self.variable.update()
 
     def __len__(self):
-        return len(self.seq)
+        return len(self._seq)
 
     @property
     def len(self):
@@ -91,10 +95,10 @@ class FunctionStatement(Statement):
         self._type = 'void'
 
     def r(self):
-        return list(itertools.chain(*[i.resolve(self.ctx) for i in self.body]))
+        return list(itertools.chain(*[i.seq for i in self.body]))
 
-    def resolve(self, context):
-        return self.seq
+    def resolve(self):
+        return self._seq
 
 
 class FunctionExprCallStatement(Statement):
@@ -135,15 +139,15 @@ class FunctionExprCallStatement(Statement):
         self.return_type = self.expr.type[len(t + '->'):]
         self._type = 'void' if self.tail else self.return_type
 
-    def resolve(self, context):
+    def resolve(self):
         params = []
 
         n = self.vars.full_len
         for expr in self.parameters[::-1]:
-            params += expr.resolve(self.ctx)
+            params += expr.seq
 
         params2 = []
-        for e in self.parameters:
+        for _ in self.parameters:
             params2 += [
                 'getstatic', self.ctx.constant_pull['st'], '',
                 'swap',
@@ -154,7 +158,7 @@ class FunctionExprCallStatement(Statement):
 
             n += 1
 
-        return params + self.expr.resolve(context) + [
+        return params + self.expr.seq + [
             'istore_2',
         ] + params2 + [
             'iload_2',
@@ -175,7 +179,7 @@ class BoolStatement(Statement):
     def typecheck(self):
         self._type = 'bool'
 
-    def resolve(self, context):
+    def resolve(self):
         return [
             'iconst_1' if self.v else 'iconst_0'
         ]
@@ -204,9 +208,9 @@ class ReturnStatement(Statement):
 
         self._type = 'void'
 
-    def resolve(self, context):
+    def resolve(self):
         if self.expr:
-            return self.expr.resolve(self.ctx) + [
+            return self.expr.seq + [
                 'ireturn'
             ]
         else:
@@ -226,7 +230,7 @@ class PassStatement(Statement):
     def typecheck(self):
         self._type = 'void'
 
-    def resolve(self, context):
+    def resolve(self):
         return [
             'nop'
         ]
@@ -249,15 +253,13 @@ class PrintStatement(Statement):
 
         self._type = 'void'
 
-    # noinspection PyTypeChecker
-    def resolve(self, context):
-        t = context.constant_pull['println:(Z)V'] if self.expr.type == 'bool' else context.constant_pull['println:(I)V']
+    def resolve(self):
         return [
             'getstatic',
-            context.constant_pull['System.out.PrintStream'], '',
-        ] + self.expr.resolve(context) + [
+            self.ctx.constant_pull['System.out.PrintStream'], '',
+        ] + self.expr.seq + [
             'invokevirtual',
-            t, '',
+            self.ctx.constant_pull['println:(Z)V' if self.expr.type == 'bool' else 'println:(I)V'], '',
         ]
 
 
@@ -265,12 +267,12 @@ class ReadStatement(Statement):
     def __init__(self, context, name, position):
         super().__init__(context, 'undefined', position)
         self.name = name
-        self.seq = None
+        self._seq = None
         self.variable = None
         self.update_seq = None
 
     def __len__(self):
-        return len(self.seq) + len(self.update_seq)
+        return len(self._seq) + len(self.update_seq)
 
     def typecheck(self):
         if self.name not in self.vars:
@@ -287,7 +289,7 @@ class ReadStatement(Statement):
         ]
 
         if self.variable.type == 'int':
-            self.seq = [
+            self._seq = [
                'bipush', '01',
                'istore_3',
                'bipush', '00',
@@ -325,7 +327,7 @@ class ReadStatement(Statement):
                'imul',
             ]
         elif self.variable.type == 'bool':
-            self.seq = read_seq + [
+            self._seq = read_seq + [
                 'dup',
                 'bipush', format(116, '02x'),
                 'if_icmpne', format(9, '04x'), '',
@@ -342,8 +344,8 @@ class ReadStatement(Statement):
 
         self._type = 'void'
 
-    def resolve(self, context):
-        return self.seq + self.update_seq
+    def resolve(self):
+        return self._seq + self.update_seq
 
 
 class OperatorStatement(Statement):
@@ -399,9 +401,9 @@ class OperatorStatement(Statement):
         if self.left.type == 'bool' and self.op not in self.RETURNS_BOOLEAN:
             raise self.exception("Unexpected operator for boolean parameters: {}".format(self.op))
 
-    def resolve(self, context):
-        return self.left.resolve(self.ctx) + \
-               self.right.resolve(self.ctx) + \
+    def resolve(self):
+        return self.left.seq + \
+               self.right.seq + \
                self.op_seq
 
 
@@ -432,8 +434,8 @@ class UnaryOperatorStatement(Statement):
         if self.expr.type == 'bool' and self.op not in self.BOOLEAN_UNARY_OPERATORS:
             raise self.exception("Unexpected unary operator for boolean expression: {}".format(self.op))
 
-    def resolve(self, context):
-        return self.expr.resolve(self.ctx) + \
+    def resolve(self):
+        return self.expr.seq + \
                self.op_seq
 
 
@@ -449,7 +451,7 @@ class ConstIntStatement(Statement):
     def __len__(self):
         return 3
 
-    def resolve(self, context):
+    def resolve(self):
         self.ctx.constant_pull['constant_' + str(self.i)] = self.i
 
         return [
@@ -475,7 +477,7 @@ class DeclareVariableStatement(Statement):
     def typecheck(self):
         self._type = 'void'
 
-    def resolve(self, context):
+    def resolve(self):
         return []
 
 
@@ -484,10 +486,10 @@ class GetVariableStatement(Statement):
         super().__init__(context, 'undefined', position)
         self.name = name
         self.variable = None
-        self.seq = None
+        self._seq = None
 
     def __len__(self):
-        return len(self.seq)
+        return len(self._seq)
 
     def typecheck(self):
         if self.name not in self.vars:
@@ -496,10 +498,10 @@ class GetVariableStatement(Statement):
         self.variable = self.vars[self.name]
 
         self._type = self.variable.type
-        self.seq = self.variable.resolve()
+        self._seq = self.variable.seq
 
-    def resolve(self, context):
-        return self.seq
+    def resolve(self):
+        return self._seq
 
 
 class AssignVariableStatement(Statement):
@@ -509,10 +511,10 @@ class AssignVariableStatement(Statement):
         self.name = name
         self.expr = expr
         self.variable = None
-        self.seq = None
+        self._seq = None
 
     def __len__(self):
-        return len(self.expr) + len(self.seq)
+        return len(self.expr) + len(self._seq)
 
     def typecheck(self):
         self.expr.typecheck()
@@ -526,12 +528,12 @@ class AssignVariableStatement(Statement):
             raise self.exception("Type {} of variable {} doesn't matches expression type {}".format(
                 self.variable.type, self.name, self.expr.type))
 
-        self.seq = self.variable.update()
+        self._seq = self.variable.update()
         self._type = 'void'
 
-    def resolve(self, context):
-        return self.expr.resolve(self.ctx) + \
-               self.seq
+    def resolve(self):
+        return self.expr.seq + \
+               self._seq
 
 
 class DeclareAndAssignVariableStatement(Statement):
@@ -544,12 +546,12 @@ class DeclareAndAssignVariableStatement(Statement):
 
         self.variable = self.vars.new(name, t)
         self.expr = expr
-        self.seq = self.variable.update()
+        self._seq = self.variable.update()
         self.name = name
         self.t = t
 
     def __len__(self):
-        return len(self.expr) + len(self.seq)
+        return len(self.expr) + len(self._seq)
 
     def typecheck(self):
         self.expr.typecheck()
@@ -560,9 +562,9 @@ class DeclareAndAssignVariableStatement(Statement):
 
         self._type = 'void'
 
-    def resolve(self, context):
-        return self.expr.resolve(self.ctx) + \
-               self.seq
+    def resolve(self):
+        return self.expr.seq + \
+               self._seq
 
 
 class IfStatement(Statement):
@@ -589,14 +591,14 @@ class IfStatement(Statement):
         self._type = 'void'
         self.ts, self.fs = len(self.true_seq), (len(self.false_seq) if self.false_seq is not None else 0)
 
-    def resolve(self, context):
-        return self.expr.resolve(self.ctx) + [
+    def resolve(self):
+        return self.expr.seq + [
             'ifne',
             format(3 + self.fs + 3, '04x'), '',
-        ] + (self.false_seq.resolve(self.ctx) if self.false_seq is not None else []) + [
+        ] + (self.false_seq.seq if self.false_seq is not None else []) + [
            'goto',
            format(3 + self.ts, '04x'), '',
-        ] + self.true_seq.resolve(self.ctx)
+        ] + self.true_seq.seq
 
 
 class WhileStatement(Statement):
@@ -606,7 +608,7 @@ class WhileStatement(Statement):
         assert isinstance(seq, Statement)
 
         self.expr = expr
-        self.seq = seq
+        self._seq = seq
         self.seq_size = None
         self.expr_size = None
 
@@ -615,16 +617,16 @@ class WhileStatement(Statement):
 
     def typecheck(self):
         self.expr.typecheck()
-        self.seq.typecheck()
-        self.seq_size = len(self.seq)
+        self._seq.typecheck()
+        self.seq_size = len(self._seq)
         self.expr_size = len(self.expr)
         self._type = 'void'
 
-    def resolve(self, context):
-        return self.expr.resolve(self.ctx) + [
+    def resolve(self):
+        return self.expr.seq + [
             'ifeq',
             format(3 + self.seq_size + 3, '04x'), '',
-        ] + self.seq.resolve(self.ctx) + [
+        ] + self._seq.seq + [
            'goto', '',
            format(256 * 256 - 3 - self.seq_size - self.expr_size, '04x'),
         ]
@@ -645,8 +647,8 @@ class ScopeStatement(Statement):
 
         self._type = 'void'
 
-    def resolve(self, context):
-        return list(itertools.chain(*[i.resolve(self.ctx) for i in self.body]))
+    def resolve(self):
+        return list(itertools.chain(*[i.seq for i in self.body]))
 
 
 class Variable:
@@ -688,6 +690,10 @@ class Variable:
             'sipush', self.number, '', 'iload_1', 'iadd',
             'iaload',
         ]
+
+    @property
+    def seq(self):
+        return self.resolve()
 
     @property
     def is_global(self):

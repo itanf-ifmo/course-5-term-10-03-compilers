@@ -47,7 +47,7 @@ def parse(source, context):
     for b in bodies:
         b.typecheck()
 
-    return list(itertools.chain(*[i.resolve(context) for i in bodies if i is not None]))
+    return list(itertools.chain(*[i.seq for i in bodies if i is not None]))
 }
 
 expr returns [v]
