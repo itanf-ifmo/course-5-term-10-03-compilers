@@ -375,7 +375,8 @@ class TestScope(unittest.TestCase):
         self.base('int a = 1; a>>; {a>>}; a>>', '1 1 1')
 
     def test_use_var_out_of_scope(self):
-        self.assertRaisesRegex(objects.CompileError, 'Variable a is not defined', _compiler, '{int a = 0; a>>}; a>>')
+        msg = 'Variable\(or function\) a is not defined'
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, '{int a = 0; a>>}; a>>')
 
     def test_already_defined_in_scope(self):
         self.assertRaisesRegex(objects.CompileError, 'Variable a already defined', _compiler, '{int a; int a}')
@@ -516,31 +517,32 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(expected_output, stdout)
 
     def test_empty_function(self):
-        self.base('void a() {} ; a()', '')
+        self.base('void a() {} ; a();', '')
 
     def test_once(self):
-        self.base('void a() {1>>} ; a()', '1')
+        self.base('void a() {1>>} ; a();', '1')
 
     def test_double_call(self):
-        self.base('int a() {1>>} ; a(); a()', '1 1')
+        self.base('int a() {1>>} ; a(); a();', '1 1')
 
     def test_two_functions(self):
-        self.base('void a() {1>>}; int b() {2>>} ; a(); b() ', '1 2')
+        self.base('void a() {1>>}; int b() {2>>} ; a(); b();', '1 2')
 
     def test_function_not_defined(self):
-        self.assertRaisesRegex(objects.CompileError, 'unable to find function', _compiler, 'a();')
+        msg = 'Variable\(or function\) a is not defined'
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'a();')
 
     def test_tow_function_reverse_order(self):
-        self.base('void a() {1>>}; int b() {2>>}; b() ; a()', '2 1')
+        self.base('void a() {1>>}; int b() {2>>}; b(); a();', '2 1')
 
     def test_more_functions(self):
-        self.base('void a() {1>>}; int b() {2>>}; bool c() {3>>}; a() ; b() ; c()', '1 2 3')
+        self.base('void a() {1>>}; int b() {2>>}; bool c() {3>>}; a() ; b() ; c();', '1 2 3')
 
     # def test_overloading(self):  # temporary disabled
     #     self.base('void a() {1>>}; int a(int c) {2>>}; a() ; a(1)', '1 2')
 
     def test_duplicate(self):
-        msg = 'function with name a already defined'
+        msg = 'Error: function\(or variable\) with name a already defined'
         self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'void a() {}; int a() {}')
 
     # def test_same_name_as_variable(self):  # temporary disabled
@@ -632,8 +634,8 @@ class TestFunctions(unittest.TestCase):
         msg = 'Error: Mismatch signatures of called function: expected \(int,bool\)\-\>void but was \(int,int\)\-\>\?'
         self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'void a(int c, bool v) { }; a(1, 1); ')
 
-    # def test_param_name_are_same(self):
-    #     self.assertRaisesRegex(objects.CompileError, '', _compiler, 'void a(int a) {}')
+    def test_param_name_are_same(self):
+        self.base('void a(int a) {a >>}; a(1);', '1')
 
     def test_return_void(self):
         self.base('''
@@ -677,6 +679,19 @@ class TestFunctions(unittest.TestCase):
         h(-1) >>;
         ''', '1 0')
 
+    def test_recursion(self):
+        self.base('''
+        int fact(int a) {
+          if a <= 1
+            return 1;
+
+          return a * fact(a - 1);
+        };
+
+        fact(5) >>;
+        fact(1) >>;
+        ''', '120 1')
+
 
 class TestHigherOrderFunctions(unittest.TestCase):
     def base(self, src, expected_output):
@@ -690,7 +705,7 @@ class TestHigherOrderFunctions(unittest.TestCase):
         void f() { 1>> };
         f();
         ()->void a = f;
-        a()
+        a();
         ''', '1 1')
 
     def test_reuse_function_var(self):
@@ -724,6 +739,22 @@ class TestHigherOrderFunctions(unittest.TestCase):
 
         a();
         ''', '1')
+
+    def test_if2(self):
+        self.base('''
+        void f() { 1>> };
+        void g() { 2>> };
+
+        ()->void a;
+
+        if 1 + 2 < 3 {
+          a = f;
+        } else {
+          a = g;
+        };
+
+        a();
+        ''', '2')
 
     def test_as_param(self):
         self.base('''

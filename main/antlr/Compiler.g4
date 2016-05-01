@@ -36,18 +36,23 @@ def setContext(self, context):
 @staticmethod
 def parse(source, context):
     lexer = CompilerLexer.CompilerLexer(antlr4.InputStream(source))
-    lexer._listeners = [ MyErrorListener(context) ]
+    lexer._listeners = [MyErrorListener(context)]
     stream = antlr4.CommonTokenStream(lexer)
     parser = CompilerParser(stream)
-    parser._listeners = [ MyErrorListener(context) ]
+    parser._listeners = [MyErrorListener(context)]
     parser.setContext(context)
-    return list(itertools.chain(*[i.resolve(context) for i in parser.body().v if i is not None]))
+
+    bodies = parser.body().v
+
+    for b in bodies:
+        b.typecheck()
+
+    return list(itertools.chain(*[i.resolve(context) for i in bodies if i is not None]))
 }
 
 expr returns [v]
     : t=BOOL {$v = BoolStatement(self.context, $t.text == 'true', ($t.line, $t.pos))}
     | INT {$v = ConstIntStatement(self.context, $INT.int, ($INT.line, $INT.pos))}
-    | func_call {$v = $func_call.v.call_from_expression()}
     | '(' e=expr ')' {$v=$e.v}
     | ID {$v = GetVariableStatement(self.context, $ID.text, ($ID.line, $ID.pos))}
     | <assoc=right> e=expr a=call_arguments {$v = FunctionExprCallStatement(self.context, $e.v, $a.v, $e.v._position).call_from_expression()}
@@ -61,10 +66,6 @@ expr returns [v]
     |         o=('!'  | 'not')     e =expr {$v = UnaryOperatorStatement(self.context, $o.text, $e.v, ($o.line, $o.pos))}
     | e1=expr o=('&&' | 'and')     e2=expr {$v = OperatorStatement(self.context, $e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
     | e1=expr o=('||' | 'or')      e2=expr {$v = OperatorStatement(self.context, $e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
-    ;
-
-func_call returns [v]
-    : n=ID a=call_arguments {$v = FunctionCallStatement(self.context, $n.text, $a.v, ($n.line, $n.pos))}
     ;
 
 func_expr_call returns [v]
@@ -103,7 +104,6 @@ seq returns [v]
     | scope          {$v = $scope.v}
     | if_expr        {$v = $if_expr.v}
     | while_expr     {$v = $while_expr.v}
-    | func_call      {$v = $func_call.v}
     | func_expr_call {$v = $func_expr_call.v}
     | PASS           {$v = PassStatement(self.context, ($PASS.line, $PASS.pos))}
     | returnW        {$v = $returnW.v}
