@@ -1,5 +1,6 @@
 import itertools
 import random
+import uuid
 
 
 class CompilerError(BaseException):
@@ -34,6 +35,9 @@ class Statement:
     def resolve(self):
         return []
 
+    def optimize(self):
+        pass
+
     @property
     def seq(self):
         return self.resolve()
@@ -58,6 +62,21 @@ class Statement:
 
     def __len__(self):
         return 0
+
+
+class SpecialStatement(Statement):
+    def __init__(self, context, seq):
+        super().__init__(context, 'undefined', (0, 0))
+        self._seq = seq
+
+    def __len__(self):
+        return len(self._seq)
+
+    def typecheck(self):
+        self._type = 'void'
+
+    def resolve(self):
+        return self._seq
 
 
 class FunctionStatement(Statement):
@@ -87,6 +106,7 @@ class FunctionStatement(Statement):
                 raise self.exception('function(or variable) with name {} already defined!'.format(name))
 
             self.variable = self.vars.new(name, self.signature)
+            self.variable.function = self
 
             self._seq += self.variable.update()
 
@@ -94,6 +114,35 @@ class FunctionStatement(Statement):
 
         if self.return_type != 'void' and self.body and isinstance(self.body[-1], ExpressionStatement):
             self.body[-1].used()
+
+    def optimize(self):
+        if not self.body:
+            return
+
+        i = self.body[-1]
+
+        if (isinstance(i, ReturnStatement) or isinstance(i, ExpressionStatement)) and \
+                isinstance(i.expr, FunctionExprCallStatement) and \
+                isinstance(i.expr.expr, GetVariableStatement) and \
+                hasattr(i.expr.expr.variable, 'function') and \
+                i.expr.expr.variable.function is self:
+
+            params_calc = sum([param.seq for param in i.expr.parameters[::-1]], [])
+            params_save = sum([self.body[0].vars[param_name].update() for param_type, param_name in self.parameters], [])
+            label_uuid = str(uuid.uuid1())
+
+            s = params_calc + params_save + [
+                'goto', '#TRO-%s' % label_uuid, '',
+            ]
+
+            self.body = \
+                [SpecialStatement(self.ctx, [':TRO-%s' % label_uuid])] +\
+                self.body[:-1] +\
+                [SpecialStatement(self.ctx, s)]
+
+            return
+        else:
+            return
 
     def __len__(self):
         return len(self._seq)
@@ -133,7 +182,7 @@ class FunctionExprCallStatement(Statement):
         return self
 
     def __len__(self):
-        return sum(len(e) for e in self.parameters) + 1 + len(self.expr) + len(self.parameters) * 9 + 7 + len(self.tail)
+        return len(self.expr) + sum(len(e) + 9 for e in self.parameters) + 6 + len(self.tail)
 
     def typecheck(self):
 
@@ -154,15 +203,10 @@ class FunctionExprCallStatement(Statement):
         self._type = 'void' if self.tail else self.return_type
 
     def resolve(self):
-        params = []
-
         n = self.vars.full_len
-        for expr in self.parameters[::-1]:
-            params += expr.seq
-
-        params2 = []
+        params = sum([param.seq for param in self.parameters[::-1]], [])
         for _ in self.parameters:
-            params2 += [
+            params += [
                 'getstatic', self.ctx.constant_pull['st'], '',
                 'swap',
                 'sipush', format(n, '04x'), '',
@@ -172,10 +216,7 @@ class FunctionExprCallStatement(Statement):
 
             n += 1
 
-        return params + self.expr.seq + [
-            'istore_2',
-        ] + params2 + [
-            'iload_2',
+        return self.expr.seq + params + [
             'sipush', format(self.vars.full_len, '04x'), '',
             'invokestatic', self.ctx.constant_pull['sw:(II)I'], '',
         ] + self.tail
@@ -327,7 +368,7 @@ class ReadStatement(Statement):
         if self.variable.type == 'int':
             self._seq = [
                'bipush', '01',
-               'istore_3',
+               'istore_2',
                'bipush', '00',
                'bipush', '00',
                'pop',
@@ -336,7 +377,7 @@ class ReadStatement(Statement):
                'bipush', format(45, '02x'),
                'if_icmpne', format(6, '04x'), '',
                'bipush', 'ff',
-               'istore_3',
+               'istore_2',
                'dup',
                'bipush', format(48, '02x'),
                'if_icmplt', format(256 * 256 - (2 + 1) - (6 + 1) - 9, '04x'), '',
@@ -359,7 +400,7 @@ class ReadStatement(Statement):
                'pop',
                'bipush', format(10, '02x'),
                'idiv',
-               'iload_3',
+               'iload_2',
                'imul',
             ]
         elif self.variable.type == 'bool':
@@ -845,7 +886,8 @@ class Context:
         for n, f in sorted((f.number, f) for f in self.functions.values()):
             tmp_size -= f.len + 3
             bodies += f.r()
-            bodies += ['goto', format(tmp_size + 3, '04x')]
+            bodies += ['bipush', '00', 'ireturn']
+            # bodies += ['goto', format(tmp_size + 3, '04x')]
 
         return [
             'nop', 'nop', 'nop', 'nop', 'nop', 'nop', 'iload_0',
@@ -854,11 +896,10 @@ class Context:
             format(number_of_functions, '08x'),  # num of functions
             table,
         ] + bodies + [
-            'sipush', '0000',
+            'sipush', '00', 'ff',
             'ireturn',
         ]
 
     def push_func_params(self, params):
-
         for p_type, p_name in params:
             self.variables.new(p_name, p_type)

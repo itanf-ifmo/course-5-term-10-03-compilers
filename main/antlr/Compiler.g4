@@ -47,6 +47,9 @@ def parse(source, context):
     for b in bodies:
         b.typecheck()
 
+    for b in bodies:
+        b.optimize()
+
     return list(itertools.chain(*[i.seq for i in bodies if i is not None]))
 }
 
@@ -67,10 +70,6 @@ expr returns [v]
     |         o=('!'  | 'not')     e =expr {$v = UnaryOperatorStatement(self.context, $o.text, $e.v, ($o.line, $o.pos))}
     | e1=expr o=('&&' | 'and')     e2=expr {$v = OperatorStatement(self.context, $e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
     | e1=expr o=('||' | 'or')      e2=expr {$v = OperatorStatement(self.context, $e1.v, $o.text, $e2.v, ($o.line, $o.pos))}
-    ;
-
-func_expr_call returns [v]
-    : e=expr a=call_arguments {$v = FunctionExprCallStatement(self.context, $e.v, $a.v, $e.v._position)}
     ;
 
 lambda_declaration returns [v]
@@ -117,7 +116,6 @@ seq returns [v]
     | scope          {$v = $scope.v}
     | if_expr        {$v = $if_expr.v}
     | while_expr     {$v = $while_expr.v}
-    | func_expr_call {$v = $func_expr_call.v}
     | PASS           {$v = PassStatement(self.context, ($PASS.line, $PASS.pos))}
     | returnW        {$v = $returnW.v}
     | expr           {$v = ExpressionStatement(self.context, $expr.v, $expr.v._position)}

@@ -810,24 +810,51 @@ class TestHigherOrderFunctions(unittest.TestCase):
         -a(b)() >>;
         ''', '-1')
 
-
-class TestClosure(unittest.TestCase):
-    def base(self, src, expected_output):
-        stdout, stderr, rc = test(_compiler(src))
-        self.assertEqual(0, rc, "expect zero return code")
-        self.assertEqual('', stderr, 'Expect empty stderr')
-        self.assertEqual(expected_output, stdout)
-
-    def test_base(self):
-        self.base('''
-        void f() {
-          void a() { 42 >> };
-          a();
-        };
-
-        f();
-
-        ''', '42')
+#
+# class TestClosure(unittest.TestCase):
+#     def base(self, src, expected_output):
+#         stdout, stderr, rc = test(_compiler(src))
+#         self.assertEqual(0, rc, "expect zero return code")
+#         self.assertEqual('', stderr, 'Expect empty stderr')
+#         self.assertEqual(expected_output, stdout)
+#
+#     def test_base(self):
+#         self.base('''
+#         void f() {
+#           void a() { 42 >> };
+#           a();
+#         };
+#
+#         f();
+#
+#         ''', '42')
+#
+#     def test_base2(self):
+#         self.base('''
+#         void f(int c) {
+#           void a() { c >> };
+#           a();
+#         };
+#
+#         f(42);
+#
+#         ''', '42')
+#
+#     def test_fact(self):
+#         self.base('''
+#         int fact(int n) {
+#           int fact(int a, int b) {
+#             if b <= 1
+#               return a;
+#
+#             return fact(a * b, b - 1);
+#           };
+#
+#           return fact(1, n);
+#         };
+#
+#         fact(6) >>;
+#         ''', '24')
 
 
 class TestLambda(unittest.TestCase):
@@ -900,6 +927,115 @@ class BigTests(unittest.TestCase):
     # noinspection PyMethodMayBeStatic
     def test_big_file(self):
         build(os.path.join(os.path.dirname(__file__), '..', 'bigTest.it'))
+
+
+class TestTailRecursionOptimization(unittest.TestCase):
+    def base(self, src, expected_output):
+        stdout, stderr, rc = test(_compiler(src))
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual(expected_output, stdout)
+
+    def test_without_optimization(self):
+        stdout, stderr, rc = test(_compiler('''
+        void f(int n) {
+          if n > 5000 return;
+
+          f(n + 1);
+          pass
+        };
+
+        f(0);
+        '''))
+
+        self.assertEqual(1, rc)
+        self.assertRegex(stderr, 'Exception in thread "main" java.lang.StackOverflowError')
+
+    def test_with_optimization(self):
+        self.base('''
+        void f(int n) {
+          if n > 5000 return;
+
+          f(n + 1);
+        };
+
+        f(0);
+        ''', '')
+
+    def test_with_optimization_return(self):
+        self.base('''
+        void f(int n) {
+          if n > 5000 return;
+
+          return f(n + 1);
+        };
+
+        f(0);
+        ''', '')
+
+    def test_with_optimization_return3(self):
+        self.base('''
+        int f(int n) {
+          if n > 5000 return n;
+
+          return f(n + 1);
+        };
+
+        f(0) >>;
+        ''', '5001')
+
+    def test_without_optimization_fact(self):
+        stdout, stderr, rc = test(_compiler('''
+        int fact(int n) {
+          if n <= 1
+            return 1;
+
+          return n * fact(n - 1);
+        };
+
+        fact(5000) >>;
+        '''))
+
+        self.assertEqual(1, rc)
+        self.assertRegex(stderr, 'Exception in thread "main" java.lang.StackOverflowError')
+
+    def test_with_optimization_fact1(self):
+        self.base('''
+
+        int fact_(int a, int b) {
+          if b <= 1
+            return a;
+
+          return fact_(a * b, b - 1);
+        };
+
+        int fact(int n) {
+          return fact_(1, n);
+        };
+
+        fact(6) >>;
+        ''', '720')
+
+    # def test_with_optimization_fact2(self):
+    #     self.base('''
+    #     int fact(int n) {
+    #       if n <= 1
+    #         return 1;
+    #
+    #       return n * fact(n - 1);
+    #     };
+    #
+    #     fact(5000) >>;
+    #     ''', '5000')
+
+    def test_with_optimization_return2(self):
+        self.base('''
+        void f(int n) {
+          1 + 2;
+        };
+
+        f(0);
+        ''', '')
 
 
 if __name__ == '__main__':

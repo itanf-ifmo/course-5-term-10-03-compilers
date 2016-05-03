@@ -1,5 +1,3 @@
-from types import LambdaType
-
 bytecode = [
     ('aaload', '32', 0),
     ('aastore', '53', 0),
@@ -255,7 +253,7 @@ class ByteCodeGenerator:
     def __init__(self, cp, instr, sseq='1000'):
         self.cp = cp
         self.seq = processAsm(['sipush', '0000', 'istore_1']) + instr + 'b1'
-        self.sseq = sseq + 'ac'
+        self.sseq = sseq
         self.max_stack = 1000
         self.max_locals = 4  # todo
         self.max_locals_ = 30000  # todo
@@ -373,16 +371,38 @@ for i, b, a in bytecode:
 
 def processAsm(seq):
     res = ''
-    c = 0
+
+    current_position = 0
+    labels = dict()
+
     for s in seq:
-        if isinstance(s, LambdaType):
-            res += s(256 * 256 - len(res) // 2 + 5)
-        elif s == 'f_call_w2':
-            res += format(256 * 256 - len(res) // 2 + 5 + c, '04x')
+        if isinstance(s, str) and s.startswith(':'):
+            labels[s[1:]] = current_position
+
+        elif isinstance(s, str) and s.startswith('#'):
+            current_position += 2
+
+        elif s not in toByte:
+            current_position += len(s) // 2
+        else:
+            current_position += 1
+
+    current_position = 0
+
+    for s in seq:
+        if isinstance(s, str) and s.startswith(':'):
+            res += '00'
+
+        elif isinstance(s, str) and s.startswith('#'):
+            res += format((256 * 256 + (labels[s[1:]] - current_position)) % (256 * 256), '04x')
+            current_position += 2
+
         elif s not in toByte:
             res += s
+            current_position += len(s) // 2
         else:
             res += format(toByte[s], '02x')
+            current_position += 1
 
     return res
 
