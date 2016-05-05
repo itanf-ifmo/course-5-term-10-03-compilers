@@ -22,7 +22,6 @@ def test(byte_code, stdin=None):
     return o.decode("utf-8").strip().replace('\n', ' '), e.decode("utf-8").strip(), p.returncode
 
 
-# @unittest.skip("demonstrating skipping")
 class TestBooleans(unittest.TestCase):
     def base(self, src, expected_output):
         stdout, stderr, rc = test(_compiler(src))
