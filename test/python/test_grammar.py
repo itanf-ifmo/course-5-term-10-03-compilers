@@ -993,7 +993,7 @@ class TestTailRecursionOptimization(unittest.TestCase):
     def test_without_optimization(self):
         stdout, stderr, rc = test(_compiler('''
         void f(int n) {
-          if n > 5000 return;
+          if n > 50000 return;
 
           f(n + 1);
           pass
@@ -1008,7 +1008,7 @@ class TestTailRecursionOptimization(unittest.TestCase):
     def test_with_optimization(self):
         self.base('''
         void f(int n) {
-          if n > 5000 return;
+          if n > 50000 return;
 
           f(n + 1);
         };
@@ -1019,7 +1019,7 @@ class TestTailRecursionOptimization(unittest.TestCase):
     def test_with_optimization_return(self):
         self.base('''
         void f(int n) {
-          if n > 5000 return;
+          if n > 50000 return;
 
           return f(n + 1);
         };
@@ -1030,13 +1030,13 @@ class TestTailRecursionOptimization(unittest.TestCase):
     def test_with_optimization_return3(self):
         self.base('''
         int f(int n) {
-          if n > 5000 return n;
+          if n > 50000 return n;
 
           return f(n + 1);
         };
 
         f(0) >>;
-        ''', '5001')
+        ''', '50001')
 
     def test_without_optimization_fact(self):
         stdout, stderr, rc = test(_compiler('''
@@ -1047,7 +1047,7 @@ class TestTailRecursionOptimization(unittest.TestCase):
           return n * fact(n - 1);
         };
 
-        fact(5000) >>;
+        fact(50000) >>;
         '''))
 
         self.assertEqual(1, rc)
