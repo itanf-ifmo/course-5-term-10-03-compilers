@@ -250,13 +250,19 @@ class ConstantPull:
 
 
 class ByteCodeGenerator:
-    def __init__(self, cp, instr, sseq='1000'):
-        self.cp = cp
-        self.seq = processAsm(['sipush', '0000', 'istore_1']) + instr + 'b1'
+    def __init__(self, context, instr, sseq='1000'):
+        self.ctx = context
+        self.cp = self.ctx.constant_pull
+        self.seq = processAsm([
+            'sipush', '00', '00',
+            'istore_1',
+            'getstatic', self.cp['st'], '',
+            'astore_2',
+        ]) + instr + 'b1'
         self.sseq = sseq
         self.max_stack = 1000
-        self.max_locals = 4  # todo
-        self.max_locals_ = 30000  # todo
+        self.max_locals = self.ctx.vars_number
+        self.max_args = self.ctx.max_arguments
 
     def generate(self):
         code = ''
@@ -293,10 +299,15 @@ class ByteCodeGenerator:
         return [int(i + j, 16) for i, j in list(zip(code[::2], code[1::2]))]
 
     def _generate_fields(self):
-        code = '0001'  # fields_count
+        code = '0002'  # fields_count
 
         code += '001a'  # ACC_PRIVATE, ACC_STATIC, ACC_FINAL
         code += self.cp['String: stack']  # name: stack
+        code += self.cp['[I']  # type: [ I
+        code += '0000'  # attributes_count
+
+        code += '001a'  # ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+        code += self.cp['String: args_stack']  # name: stack
         code += self.cp['[I']  # type: [ I
         code += '0000'  # attributes_count
         return code
@@ -314,9 +325,14 @@ class ByteCodeGenerator:
         code += format(0, '04x')
 
         seq = processAsm([
-            'sipush', format(self.max_locals_, '04x'),
+            'sipush', format(self.max_locals, '04x'),
             'newarray', '0a',
-            'putstatic', self.cp['Field stack'],
+            'putstatic', self.cp['st'],
+
+            'sipush', format(self.max_args, '04x'),
+            'newarray', '0a',
+            'putstatic', self.cp['args_st'],
+
             'return'
         ])
 
@@ -332,13 +348,13 @@ class ByteCodeGenerator:
     def _generate_switch_method(self):
         m = '000a'  # ACC_PRIVATE, ACC_STATIC
         m += self.cp['sw']
-        m += self.cp['(II)I']
+        m += self.cp['(I)I']
         m += '0001'  # attributes_count
 
         m += self.cp['code section']
 
         code = ''
-        code += format(100, '04x')
+        code += format(self.max_stack, '04x')
         code += format(4, '04x')
 
         code += format(len(self.sseq) // 2, '08x')  # code size
@@ -353,7 +369,7 @@ class ByteCodeGenerator:
     def _generate_code_section(self):
         code_section = ''
         code_section += format(self.max_stack, '04x')
-        code_section += format(self.max_locals, '04x')
+        code_section += format(4, '04x')
         code_section += format(len(self.seq) // 2, '08x')  # code size
         code_section += self.seq
         code_section += '0000'  # ??
@@ -408,4 +424,4 @@ def processAsm(seq):
 
 
 def compile(c, seq, sseq):
-    return ByteCodeGenerator(c.constant_pull, processAsm(seq), processAsm(sseq)).generate()
+    return ByteCodeGenerator(c, processAsm(seq), processAsm(sseq)).generate()

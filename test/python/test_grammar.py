@@ -18,7 +18,7 @@ def test(byte_code, stdin=None):
     if stdin:
         p.stdin.write(stdin.encode())
 
-    o, e = p.communicate()
+    o, e = p.communicate(timeout=10)
     return o.decode("utf-8").strip().replace('\n', ' '), e.decode("utf-8").strip(), p.returncode
 
 
@@ -26,8 +26,9 @@ def test(byte_code, stdin=None):
 class TestBooleans(unittest.TestCase):
     def base(self, src, expected_output):
         stdout, stderr, rc = test(_compiler(src))
-        self.assertEqual(0, rc, "expect zero return code")
         self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(0, rc, "expect zero return code")
+
         self.assertEqual(expected_output, stdout)
 
     def test_true(self):
@@ -810,51 +811,85 @@ class TestHigherOrderFunctions(unittest.TestCase):
         -a(b)() >>;
         ''', '-1')
 
-#
-# class TestClosure(unittest.TestCase):
-#     def base(self, src, expected_output):
-#         stdout, stderr, rc = test(_compiler(src))
-#         self.assertEqual(0, rc, "expect zero return code")
-#         self.assertEqual('', stderr, 'Expect empty stderr')
-#         self.assertEqual(expected_output, stdout)
-#
-#     def test_base(self):
-#         self.base('''
-#         void f() {
-#           void a() { 42 >> };
-#           a();
-#         };
-#
-#         f();
-#
-#         ''', '42')
-#
-#     def test_base2(self):
-#         self.base('''
-#         void f(int c) {
-#           void a() { c >> };
-#           a();
-#         };
-#
-#         f(42);
-#
-#         ''', '42')
-#
-#     def test_fact(self):
-#         self.base('''
-#         int fact(int n) {
-#           int fact(int a, int b) {
-#             if b <= 1
-#               return a;
-#
-#             return fact(a * b, b - 1);
-#           };
-#
-#           return fact(1, n);
-#         };
-#
-#         fact(6) >>;
-#         ''', '24')
+    def test_expr_in_void(self):
+        self.base('''
+        void f(int n) {
+          1 + 2;
+        };
+
+        f(0);
+        ''', '')
+
+
+class TestClosure(unittest.TestCase):
+    def base(self, src, expected_output):
+        stdout, stderr, rc = test(_compiler(src))
+        self.assertEqual(0, rc, "expect zero return code")
+        self.assertEqual('', stderr, 'Expect empty stderr')
+        self.assertEqual(expected_output, stdout)
+
+    def test_base(self):
+        self.base('''
+        void f() {
+          void a() { 42 >> };
+          a();
+        };
+
+        f();
+
+        ''', '42')
+
+    def test_base2(self):
+        self.base('''
+        void f(int c) {
+          void a() { c >> };
+          a();
+        };
+
+        f(42);
+
+        ''', '42')
+
+    def test_lambda(self):
+        self.base('''
+        ()->int f(int c) {
+          return int(){c + 1};
+        };
+
+        f(42)()>>;
+
+        ''', '43')
+
+    def test_lambda2(self):
+        self.base('''
+        void a(int a1) {
+        };
+
+        ()->int f(int c) {
+          return int(){c + 1};
+        };
+
+        ()->int g = f(42);
+        a(12);
+        g()>>;
+
+        ''', '43')
+
+    def test_fact(self):
+        self.base('''
+        int fact(int n) {
+          int fact(int a, int b) {
+            if b <= 1
+              return a;
+
+            return fact(a * b, b - 1);
+          };
+
+          return fact(1, n);
+        };
+
+        fact(6) >>;
+        ''', '720')
 
 
 class TestLambda(unittest.TestCase):
@@ -1015,27 +1050,6 @@ class TestTailRecursionOptimization(unittest.TestCase):
 
         fact(6) >>;
         ''', '720')
-
-    # def test_with_optimization_fact2(self):
-    #     self.base('''
-    #     int fact(int n) {
-    #       if n <= 1
-    #         return 1;
-    #
-    #       return n * fact(n - 1);
-    #     };
-    #
-    #     fact(5000) >>;
-    #     ''', '5000')
-
-    def test_with_optimization_return2(self):
-        self.base('''
-        void f(int n) {
-          1 + 2;
-        };
-
-        f(0);
-        ''', '')
 
 
 if __name__ == '__main__':

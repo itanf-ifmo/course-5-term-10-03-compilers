@@ -54,6 +54,7 @@ class Statement:
 
     @property
     def ctx(self):
+        assert isinstance(self._context, Context)
         return self._context
 
     @property
@@ -113,7 +114,27 @@ class FunctionStatement(Statement):
         context.functions[sp] = self
 
         if self.return_type != 'void' and self.body and isinstance(self.body[-1], ExpressionStatement):
+            # noinspection PyUnresolvedReferences
             self.body[-1].used()
+
+        if self.body:
+            self.body = [self._load_arguments()] + self.body
+
+        self.ctx.max_arguments = max(self.ctx.max_arguments, len(self.parameters))
+
+    def _load_arguments(self):
+        params = []
+        for n in range(len(self.parameters)):
+            params += [
+                'getstatic', self.ctx.constant_pull['args_st'], '',
+                'sipush', format(n, '04x'), '',
+                'iaload',
+            ] + self.body[0].vars[self.parameters[n][1]].update()
+
+        s = SpecialStatement(self.body[0].ctx, params)
+        s._vars = self.body[0].vars
+
+        return s
 
     def optimize(self):
         if not self.body:
@@ -121,28 +142,26 @@ class FunctionStatement(Statement):
 
         i = self.body[-1]
 
+        # noinspection PyUnresolvedReferences
         if (isinstance(i, ReturnStatement) or isinstance(i, ExpressionStatement)) and \
                 isinstance(i.expr, FunctionExprCallStatement) and \
                 isinstance(i.expr.expr, GetVariableStatement) and \
                 hasattr(i.expr.expr.variable, 'function') and \
                 i.expr.expr.variable.function is self:
 
-            params_calc = sum([param.seq for param in i.expr.parameters[::-1]], [])
-            params_save = sum([self.body[0].vars[param_name].update() for param_type, param_name in self.parameters], [])
+            params = sum([param.seq for param in i.expr.parameters[::-1]], [])
+            params += sum([self.body[1].vars[param_name].update() for param_type, param_name in self.parameters], [])
+
             label_uuid = str(uuid.uuid1())
 
-            s = params_calc + params_save + [
+            s = params + [
                 'goto', '#TRO-%s' % label_uuid, '',
             ]
 
             self.body = \
-                [SpecialStatement(self.ctx, [':TRO-%s' % label_uuid])] +\
-                self.body[:-1] +\
-                [SpecialStatement(self.ctx, s)]
-
-            return
-        else:
-            return
+                [self.body[0], SpecialStatement(self.body[0].ctx, [':TRO-%s' % label_uuid])] +\
+                self.body[1:][:-1] +\
+                [SpecialStatement(self.body[0].ctx, s)]
 
     def __len__(self):
         return len(self._seq)
@@ -182,7 +201,7 @@ class FunctionExprCallStatement(Statement):
         return self
 
     def __len__(self):
-        return len(self.expr) + sum(len(e) + 9 for e in self.parameters) + 6 + len(self.tail)
+        return len(self.expr) + sum(len(e) + 7 for e in self.parameters) + 3 + len(self.tail)
 
     def typecheck(self):
 
@@ -203,22 +222,18 @@ class FunctionExprCallStatement(Statement):
         self._type = 'void' if self.tail else self.return_type
 
     def resolve(self):
-        n = self.vars.full_len
-        params = sum([param.seq for param in self.parameters[::-1]], [])
-        for _ in self.parameters:
-            params += [
-                'getstatic', self.ctx.constant_pull['st'], '',
-                'swap',
-                'sipush', format(n, '04x'), '',
-                'swap',
-                'iastore',
-            ]
+        params = []
 
-            n += 1
+        for n, param in enumerate(self.parameters):
+            params += [
+                'getstatic', self.ctx.constant_pull['args_st'], '',
+                'sipush', format(n, '04x'), '',
+            ] + param.seq
+
+        params += ['iastore'] * len(self.parameters)
 
         return self.expr.seq + params + [
-            'sipush', format(self.vars.full_len, '04x'), '',
-            'invokestatic', self.ctx.constant_pull['sw:(II)I'], '',
+            'invokestatic', self.ctx.constant_pull['sw:(I)I'], '',
         ] + self.tail
 
 
@@ -368,7 +383,7 @@ class ReadStatement(Statement):
         if self.variable.type == 'int':
             self._seq = [
                'bipush', '01',
-               'istore_2',
+               'istore_3',
                'bipush', '00',
                'bipush', '00',
                'pop',
@@ -377,7 +392,7 @@ class ReadStatement(Statement):
                'bipush', format(45, '02x'),
                'if_icmpne', format(6, '04x'), '',
                'bipush', 'ff',
-               'istore_2',
+               'istore_3',
                'dup',
                'bipush', format(48, '02x'),
                'if_icmplt', format(256 * 256 - (2 + 1) - (6 + 1) - 9, '04x'), '',
@@ -400,7 +415,7 @@ class ReadStatement(Statement):
                'pop',
                'bipush', format(10, '02x'),
                'idiv',
-               'iload_2',
+               'iload_3',
                'imul',
             ]
         elif self.variable.type == 'bool':
@@ -737,34 +752,18 @@ class Variable:
         self.ctx = ctx
 
     def update(self):
-        if self.is_global:
-            return [
-                'getstatic', self.ctx.constant_pull['st'], '',
-                'swap',
-                'sipush', self.number, '',
-                'swap',
-                'iastore',
-            ]
-
         return [
-            'getstatic', self.ctx.constant_pull['st'], '',
+            'aload_2',
             'swap',
-            'sipush', self.number, '', 'iload_1', 'iadd',
+            'sipush', self.number, '',
             'swap',
             'iastore',
         ]
 
     def resolve(self):
-        if self.is_global:
-            return [
-                'getstatic', self.ctx.constant_pull['st'], '',
-                'sipush', self.number, '',
-                'iaload',
-            ]
-
         return [
-            'getstatic', self.ctx.constant_pull['st'], '',
-            'sipush', self.number, '', 'iload_1', 'iadd',
+            'aload_2',
+            'sipush', self.number, '',
             'iaload',
         ]
 
@@ -793,7 +792,8 @@ class Variables:
         return self._current
 
     def new(self, name, t):
-        self._current[name] = Variable(self, t, name, len(self), self._context)
+        self._current[name] = Variable(self, t, name, self._context.vars_number, self._context)
+        self._context.vars_number += 1
         return self._current[name]
 
     @property
@@ -810,7 +810,7 @@ class Variables:
 
     @property
     def full_len(self):
-        return (0 if self._previous is None else self._previous.full_len) + len(self._current)
+        return self._context.vars_number
 
     @property
     def function_return_type(self):
@@ -852,12 +852,82 @@ class Variables:
 
 
 class Context:
-    def __init__(self, source, cp):
+    def __init__(self, name, source):
+        self.name = name
         self.file = None
         self.source = source
-        self.constant_pull = cp
+        self.constant_pull = self._generate_constant_pull()
         self.variables = Variables(self, None, 'g', None)
         self.functions = dict()
+        self.vars_number = 0
+        self.max_arguments = 0
+
+    def _generate_constant_pull(self):
+        from compiler import ConstantPull
+
+        cp = ConstantPull()
+        cp['code section'] = 'Code'
+        cp['StackMapTable section'] = 'StackMapTable'
+        cp['this class name'] = self.name
+        cp['Object class name'] = 'java/lang/Object'
+        cp.putClass('this class', 'this class name')
+        cp.putClass('Object class', 'Object class name')
+
+        cp['main method name'] = 'main'
+        cp['main method type'] = '([Ljava/lang/String;)V'
+
+        cp['System class name'] = 'java/lang/System'
+        cp.putClass('System', 'System class name')
+
+        cp['in'] = 'in'
+        cp['LInputStream'] = 'Ljava/io/InputStream;'
+        cp.putNameAndType('in:LInputStream', 'in', 'LInputStream')
+        cp.putFieldref('System.in.InputStream', 'System', 'in:LInputStream')
+
+        cp['out'] = 'out'
+        cp['LPrintStream'] = 'Ljava/io/PrintStream;'
+        cp.putNameAndType('out:LPrintStream', 'out', 'LPrintStream')
+        cp.putFieldref('System.out.PrintStream', 'System', 'out:LPrintStream')
+
+        cp['InputStream class name'] = 'java/io/InputStream'
+        cp.putClass('InputStream class', 'InputStream class name')
+        cp['read'] = 'read'
+        cp['()I'] = '()I'
+        cp.putNameAndType('read()I', 'read', '()I')
+        cp.putMethodref('read:()I', 'InputStream class', 'read()I')
+
+        cp['PrintStream class name'] = 'java/io/PrintStream'
+        cp.putClass('PrintStream class', 'PrintStream class name')
+        cp['println'] = 'println'
+
+        cp['(I)V'] = '(I)V'
+        cp.putNameAndType('println(I)V', 'println', '(I)V')
+        cp.putMethodref('println:(I)V', 'PrintStream class', 'println(I)V')
+
+        cp['(Z)V'] = '(Z)V'
+        cp.putNameAndType('println(Z)V', 'println', '(Z)V')
+        cp.putMethodref('println:(Z)V', 'PrintStream class', 'println(Z)V')
+
+        cp['String: stack'] = 'stack'
+        cp['String: args_stack'] = 'args_stack'
+
+        cp['[I'] = '[I'
+
+        cp['<clinit>'] = '<clinit>'
+        cp['()V'] = '()V'
+
+        cp.putNameAndType('stack:[I', 'String: stack', '[I')
+        cp.putFieldref('st', 'this class', 'stack:[I')
+
+        cp.putNameAndType('args_stack:[I', 'String: args_stack', '[I')
+        cp.putFieldref('args_st', 'this class', 'args_stack:[I')
+
+        cp['sw'] = 'sw'
+        cp['(I)I'] = '(I)I'
+        cp.putNameAndType('sw(I)I', 'sw', '(I)I')
+        cp.putMethodref('sw:(I)I', 'this class', 'sw(I)I')
+
+        return cp
 
     def push(self, t, _, function_return_type=None):
         self.variables = Variables(self, self.variables, t, function_return_type)
@@ -887,10 +957,11 @@ class Context:
             tmp_size -= f.len + 3
             bodies += f.r()
             bodies += ['bipush', '00', 'ireturn']
-            # bodies += ['goto', format(tmp_size + 3, '04x')]
 
         return [
-            'nop', 'nop', 'nop', 'nop', 'nop', 'nop', 'iload_0',
+            'getstatic', self.constant_pull['st'], '',
+            'astore_2',
+            'nop', 'nop', 'iload_0',
             'lookupswitch',
             format(switch_size, '08x'),      # def
             format(number_of_functions, '08x'),  # num of functions
