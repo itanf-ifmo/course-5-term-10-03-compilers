@@ -891,6 +891,26 @@ class TestClosure(unittest.TestCase):
         fact(6) >>;
         ''', '720')
 
+    def test_complex1(self):
+        self.base('''
+        ()->void f(int n) {
+          void a() { n = n + 1; };
+          void b() { n = n + 2; };
+
+          n>>;
+          a();
+          n>>;
+          b();
+          n>>;
+
+          return void(){ a(); b(); n>>; };
+        };
+
+        ()->void a = f(6);
+        a();
+        a();
+        ''', '6 7 9 12 15')
+
 
 class TestLambda(unittest.TestCase):
     def base(self, src, expected_output):
