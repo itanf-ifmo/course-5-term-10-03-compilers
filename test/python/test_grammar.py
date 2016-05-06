@@ -756,6 +756,21 @@ class TestHigherOrderFunctions(unittest.TestCase):
         a();
         ''', '2')
 
+    def test_if3(self):
+        self.base('''
+        void f() { 1>> };
+        void g() { 2>> };
+
+        ()->void a(bool a, ()->void t, ()->void f) {
+          if a
+            return t;
+          return f;
+        };
+
+        a(true, f, g)();
+        a(false, f, g)();
+        ''', '1 2')
+
     def test_as_param(self):
         self.base('''
         int q = 4;
@@ -909,6 +924,23 @@ class TestClosure(unittest.TestCase):
         a();
         a();
         ''', '6 7 9 12 15')
+
+    def test_very_complex(self):
+        self.base('''
+        ()->void f(int n) {
+          void a() { n = n + 1 };
+
+          return ()->void(()->void b, ()->void a){ void(){b(); a(); n>>} }(a, void(){ n = n * 2 });
+        };
+
+        ()->void a = f(3);
+        a();
+        ()->void b = f(7);
+        a();
+        b();
+        a();
+        b();
+        ''', '8 16 34 70 142')  # todo should be 8 18 16 38 34
 
 
 class TestLambda(unittest.TestCase):
