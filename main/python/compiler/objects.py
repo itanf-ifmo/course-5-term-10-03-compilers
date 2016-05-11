@@ -66,8 +66,9 @@ class Statement:
 
 
 class SpecialStatement(Statement):
-    def __init__(self, context, seq):
+    def __init__(self, context, _vars, seq):
         super().__init__(context, 'undefined', (0, 0))
+        self._vars = _vars
         self._seq = seq
 
     def __len__(self):
@@ -81,7 +82,9 @@ class SpecialStatement(Statement):
 
 
 class FunctionStatement(Statement):
-    def __init__(self, context, return_type, name, parameters, body, position):
+    def __init__(self, context, return_type, name, parameters, position):
+        context.push('f', return_type)
+
         super().__init__(context, 'undefined', position)
 
         if name is None:
@@ -93,25 +96,29 @@ class FunctionStatement(Statement):
         self.return_type = return_type
         self.name = name
         self.parameters = parameters
-        self.body = body
-        p = '(' + ','.join(t for t, n in parameters) + ')'
-        sp = name + p
-
-        self.signature = p + '->' + return_type
+        self.body = None
+        self.signature = '(' + ','.join(t for t, n in parameters) + ')' + '->' + return_type
         self.number = len(context.functions)
+        context.functions[self.name + self.signature] = self
 
         self._seq = ['sipush', format(self.number, '04x'), '']
 
         if not self.lambda_f:
-            if name in context.variables:
+            if name in self.vars.previous.current_scope:
                 raise self.exception('function(or variable) with name {} already defined!'.format(name))
 
-            self.variable = self.vars.new(name, self.signature)
-            self.variable.function = self
+            variable = self.vars.previous.new(name, self.signature)
+            variable.function = self
 
-            self._seq += self.variable.update()
+            self._seq += variable.update()
 
-        context.functions[sp] = self
+        for p_type, p_name in parameters:
+            self.vars.new(p_name, p_type)
+
+        self.ctx.max_arguments = max(self.ctx.max_arguments, len(self.parameters))
+
+    def build(self, body):
+        self.body = body
 
         if self.return_type != 'void' and self.body and isinstance(self.body[-1], ExpressionStatement):
             # noinspection PyUnresolvedReferences
@@ -120,19 +127,18 @@ class FunctionStatement(Statement):
         if self.body:
             self.body = [self._load_arguments()] + self.body
 
-        self.ctx.max_arguments = max(self.ctx.max_arguments, len(self.parameters))
+        self.ctx.pop()
 
     def _load_arguments(self):
         params = []
         for n in range(len(self.parameters)):
             params += [
-                'getstatic', self.ctx.constant_pull['args_st'], '',
+                'getstatic', self.ctx.constant_pull['args_st'], '',  # todo: update vars
                 'sipush', format(n, '04x'), '',
                 'iaload',
-            ] + self.body[0].vars[self.parameters[n][1]].update()
+            ] + self.vars[self.parameters[n][1]].update()
 
-        s = SpecialStatement(self.body[0].ctx, params)
-        s._vars = self.body[0].vars
+        s = SpecialStatement(self.ctx, self.vars, params)
 
         return s
 
@@ -150,7 +156,7 @@ class FunctionStatement(Statement):
                 i.expr.expr.variable.function is self:
 
             params = sum([param.seq for param in i.expr.parameters[::-1]], [])
-            params += sum([self.body[1].vars[param_name].update() for param_type, param_name in self.parameters], [])
+            params += sum([self.vars[param_name].update() for param_type, param_name in self.parameters], [])  # todo: update vars
 
             label_uuid = str(uuid.uuid1())
 
@@ -159,9 +165,9 @@ class FunctionStatement(Statement):
             ]
 
             self.body = \
-                [self.body[0], SpecialStatement(self.body[0].ctx, [':TRO-%s' % label_uuid])] +\
+                [self.body[0], SpecialStatement(self.ctx, self.vars, [':TRO-%s' % label_uuid])] +\
                 self.body[1:][:-1] +\
-                [SpecialStatement(self.body[0].ctx, s)]
+                [SpecialStatement(self.ctx, self.vars, s)]
 
     def __len__(self):
         return len(self._seq)
@@ -180,7 +186,20 @@ class FunctionStatement(Statement):
         return list(itertools.chain(*[i.seq for i in self.body]))
 
     def resolve(self):
-        return self._seq
+        return [
+            # 'sipush', format(len(self.vars.current_scope), '04x'), '',
+            # 'anewarray', self.ctx.constant_pull['Object class'], '',
+            # 'dup',
+            # 'bipush', '00',
+            # 'aload_2',
+            # 'aastore',
+            # 'astore_2',
+        ] + self._seq + [
+            # 'aload_2',
+            # 'bipush', '00',
+            # 'aaload',
+            # 'astore_2',
+        ]
 
 
 class FunctionExprCallStatement(Statement):
@@ -226,7 +245,7 @@ class FunctionExprCallStatement(Statement):
 
         for n, param in enumerate(self.parameters):
             params += [
-                'getstatic', self.ctx.constant_pull['args_st'], '',
+                'getstatic', self.ctx.constant_pull['args_st'], '',  # todo: update vars
                 'sipush', format(n, '04x'), '',
             ] + param.seq
 
@@ -351,7 +370,7 @@ class PrintStatement(Statement):
             self.ctx.constant_pull['System.out.PrintStream'], '',
         ] + self.expr.seq + [
             'invokevirtual',
-            self.ctx.constant_pull['println:(Z)V' if self.expr.type == 'bool' else 'println:(I)V'], '',
+            self.ctx.constant_pull['printBool' if self.expr.type == 'bool' else 'printInt'], '',
         ]
 
 
@@ -377,7 +396,7 @@ class ReadStatement(Statement):
             'getstatic',
             self.ctx.constant_pull['System.in.InputStream'], '',
             'invokevirtual',
-            self.ctx.constant_pull['read:()I'], ''
+            self.ctx.constant_pull['readInt'], ''
         ]
 
         if self.variable.type == 'int':
@@ -725,10 +744,15 @@ class WhileStatement(Statement):
 
 
 class ScopeStatement(Statement):
-    def __init__(self, context, body, position):
+    def __init__(self, context, position):
+        context.push('s')
         super().__init__(context, 'undefined', position)
 
+        self.body = None
+
+    def build(self, body):
         self.body = body
+        self.ctx.pop()
 
     def __len__(self):
         return sum(len(i) for i in self.body)
@@ -751,7 +775,7 @@ class Variable:
         self.closure = cl
         self.ctx = ctx
 
-    def update(self):
+    def update(self):  # todo: update vars
         return [
             'aload_2',
             'swap',
@@ -760,7 +784,7 @@ class Variable:
             'iastore',
         ]
 
-    def resolve(self):
+    def resolve(self):  # todo: update vars
         return [
             'aload_2',
             'sipush', self.number, '',
@@ -889,25 +913,6 @@ class Context:
         cp.putNameAndType('out:LPrintStream', 'out', 'LPrintStream')
         cp.putFieldref('System.out.PrintStream', 'System', 'out:LPrintStream')
 
-        cp['InputStream class name'] = 'java/io/InputStream'
-        cp.putClass('InputStream class', 'InputStream class name')
-        cp['read'] = 'read'
-        cp['()I'] = '()I'
-        cp.putNameAndType('read()I', 'read', '()I')
-        cp.putMethodref('read:()I', 'InputStream class', 'read()I')
-
-        cp['PrintStream class name'] = 'java/io/PrintStream'
-        cp.putClass('PrintStream class', 'PrintStream class name')
-        cp['println'] = 'println'
-
-        cp['(I)V'] = '(I)V'
-        cp.putNameAndType('println(I)V', 'println', '(I)V')
-        cp.putMethodref('println:(I)V', 'PrintStream class', 'println(I)V')
-
-        cp['(Z)V'] = '(Z)V'
-        cp.putNameAndType('println(Z)V', 'println', '(Z)V')
-        cp.putMethodref('println:(Z)V', 'PrintStream class', 'println(Z)V')
-
         cp['String: stack'] = 'stack'
         cp['String: args_stack'] = 'args_stack'
 
@@ -927,16 +932,22 @@ class Context:
         cp.putNameAndType('sw(I)I', 'sw', '(I)I')
         cp.putMethodref('sw:(I)I', 'this class', 'sw(I)I')
 
+        cp.createMethodRef('readInt', 'java/io/InputStream.read:()I')
+
+        cp.createMethodRef('printInt', 'java/io/PrintStream.println:(I)V')
+        cp.createMethodRef('printBool', 'java/io/PrintStream.println:(Z)V')
+
+        cp.createMethodRef('box', 'java/lang/Integer.valueOf:(I)Ljava/lang/Integer;')
+        cp.createMethodRef('unbox', 'java/lang/Integer.intValue:()I')
+
         return cp
 
-    def push(self, t, _, function_return_type=None):
+    def push(self, t, function_return_type=None):
         self.variables = Variables(self, self.variables, t, function_return_type)
+        n = 0  # num of vars on this scope
 
-    def pop(self, p):
+    def pop(self):
         self.variables = self.variables.previous
-
-        if self.variables is None:
-            raise CompileError(self, p[0], p[1], 'Unexpectedly empty context')
 
     def build_functions_table(self):
         number_of_functions = len(self.functions)
@@ -967,10 +978,6 @@ class Context:
             format(number_of_functions, '08x'),  # num of functions
             table,
         ] + bodies + [
-            'sipush', '00', 'ff',
+            'bipush', 'ff',
             'ireturn',
         ]
-
-    def push_func_params(self, params):
-        for p_type, p_name in params:
-            self.variables.new(p_name, p_type)

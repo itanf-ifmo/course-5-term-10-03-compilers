@@ -248,6 +248,31 @@ class ConstantPull:
     def __str__(self):
         return ''.join(v for n, v in sorted(self.pull.values()))
 
+    def createMethodRef(self, alias, method):
+        c, other = method.split('.')
+        m, t = other.split(':')
+
+        if c + ' string' not in self.pull:
+            self[c + ' string'] = c
+
+        if c + ' class' not in self.pull:
+            self.putClass(c + ' class', c + ' string')
+
+        if m + ' string' not in self.pull:
+            self[m + ' string'] = m
+
+        if t + ' type' not in self.pull:
+            self[t + ' type'] = t
+
+        if m + ':' + t not in self.pull:
+            self.putNameAndType(m + ':' + t, m + ' string', t + ' type')
+
+        if c + '.' + m + ':' + t not in self.pull:
+            self.putMethodref(c + '.' + m + ':' + t, c + ' class', m + ':' + t)
+
+        if alias not in self.pull:
+            self.putMethodref(alias, c + ' class', m + ':' + t)
+
 
 class ByteCodeGenerator:
     def __init__(self, context, instr, sseq='1000'):

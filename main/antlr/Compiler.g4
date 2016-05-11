@@ -130,38 +130,31 @@ def_var returns [v]
     | varType ID '=' expr {$v = DeclareAndAssignVariableStatement(self.context, $varType.v, $ID.text, $expr.v, ($ID.line, $ID.pos))}
     ;
 
-
-
-
-scope returns [v]
-    : s='{' '}'      {$v=ScopeStatement(self.context, [], ($s.line, $s.pos))}
-    | s='{'          {self.context.push('s', ($s.line, $s.pos))}
-        body         {$v = ScopeStatement(self.context, $body.v, ($s.line, $s.pos))}
-      e='}'          {self.context.pop(($e.line, $e.pos))}
+scope returns [v] :
+    s='{'            {$v = ScopeStatement(self.context, ($s.line, $s.pos))}
+        body         {$v.build($body.v)}
+    e='}'
     ;
 
 def_func returns [v] :
-    funcReturnType fn=ID function_parameters
-    s='{'            {self.context.push('f', ($s.line, $s.pos), $funcReturnType.v)}
-                     {self.context.push_func_params($function_parameters.v)}
-        body         {self.context.pop(($s.line, $s.pos))}
-    '}'              {$v = FunctionStatement(self.context, $funcReturnType.v, $fn.text, $function_parameters.v, $body.v, ($s.line, $s.pos))}
+    funcReturnType ID function_parameters
+    s='{'            {$v = FunctionStatement(self.context, $funcReturnType.v, $ID.text, $function_parameters.v, ($s.line, $s.pos))}
+        body         {$v.build($body.v)}
+    '}'
     ;
 
 def_lambda returns [v] :
-    funcReturnType function_parameters
-    s='{'            {self.context.push('f', ($s.line, $s.pos), $funcReturnType.v)}
-                     {self.context.push_func_params($function_parameters.v)}
-        body         {self.context.pop(($s.line, $s.pos))}
-    '}'              {$v = FunctionStatement(self.context, $funcReturnType.v, None, $function_parameters.v, $body.v, ($s.line, $s.pos))}
+    funcReturnType    function_parameters
+    s='{'            {$v = FunctionStatement(self.context, $funcReturnType.v, None, $function_parameters.v, ($s.line, $s.pos))}
+        body         {$v.build($body.v)}
+    '}'
     ;
 
 scope_or_statement returns [v]
     : scope          {$v=$scope.v}
-    | {self.context.push('s', (0, 0))} seq {$v=$seq.v} {self.context.pop((0, 0))}
+    |                {$v = ScopeStatement(self.context, (0, 0))}
+      seq            {$v.build([$seq.v])}
     ;
-
-
 
 while_expr returns [v]
     : w='while' e=expr s=scope_or_statement {$v = WhileStatement(self.context, $e.v, $s.v, ($w.line, $w.pos))}
