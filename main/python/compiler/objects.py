@@ -101,7 +101,17 @@ class FunctionStatement(Statement):
         self.number = len(context.functions)
         context.functions[self.name + self.signature] = self
 
-        self._seq = ['sipush', format(self.number, '04x'), '']
+        self._seq = [
+            'iconst_2',
+            'anewarray', self.ctx.constant_pull['Object class'], '',
+            'dup',
+            'iconst_0',
+            'sipush', format(self.number, '04x'), '',
+            'invokestatic', self.ctx.constant_pull['box'], '',
+            'aastore',
+
+            # todo store ctx
+        ]
 
         if not self.lambda_f:
             if name in self.vars.previous.current_scope:
@@ -132,11 +142,19 @@ class FunctionStatement(Statement):
     def _load_arguments(self):
         params = []
         for n in range(len(self.parameters)):
+            tsa = [
+                'checkcast', self.ctx.constant_pull['java/lang/Integer class'], '',
+                'invokevirtual', self.ctx.constant_pull['unbox'], '',
+            ]
+
+            if '->' in self.parameters[n][0]:
+                tsa = []
+
             params += [
                 'getstatic', self.ctx.constant_pull['args_st'], '',  # todo: update vars
                 'sipush', format(n, '04x'), '',
-                'iaload',
-            ] + self.vars[self.parameters[n][1]].update()
+                'aaload',
+            ] + tsa + self.vars[self.parameters[n][1]].update()
 
         s = SpecialStatement(self.ctx, self.vars, params)
 
@@ -152,11 +170,12 @@ class FunctionStatement(Statement):
         if (isinstance(i, ReturnStatement) or isinstance(i, ExpressionStatement)) and \
                 isinstance(i.expr, FunctionExprCallStatement) and \
                 isinstance(i.expr.expr, GetVariableStatement) and \
-                hasattr(i.expr.expr.variable, 'function') and \
+                i.expr.expr.variable.function and \
                 i.expr.expr.variable.function is self:
 
             params = sum([param.seq for param in i.expr.parameters[::-1]], [])
-            params += sum([self.vars[param_name].update() for param_type, param_name in self.parameters], [])  # todo: update vars
+            params += sum([self.vars[param_name].update() for param_type, param_name in self.parameters], [])
+            # todo: update vars
 
             label_uuid = str(uuid.uuid1())
 
@@ -183,9 +202,6 @@ class FunctionStatement(Statement):
         self._type = self.signature if self.lambda_f else 'void'
 
     def r(self):
-        return list(itertools.chain(*[i.seq for i in self.body]))
-
-    def resolve(self):
         return [
             # 'sipush', format(len(self.vars.current_scope), '04x'), '',
             # 'anewarray', self.ctx.constant_pull['Object class'], '',
@@ -194,12 +210,15 @@ class FunctionStatement(Statement):
             # 'aload_2',
             # 'aastore',
             # 'astore_2',
-        ] + self._seq + [
+        ] + list(itertools.chain(*[i.seq for i in self.body])) + [
             # 'aload_2',
             # 'bipush', '00',
             # 'aaload',
             # 'astore_2',
         ]
+
+    def resolve(self):
+        return self._seq
 
 
 class FunctionExprCallStatement(Statement):
@@ -220,10 +239,9 @@ class FunctionExprCallStatement(Statement):
         return self
 
     def __len__(self):
-        return len(self.expr) + sum(len(e) + 7 for e in self.parameters) + 3 + len(self.tail)
+        return len(self.expr) + sum(len(e) + 9 + 1 for e in self.parameters) + 3 + len(self.tail)
 
     def typecheck(self):
-
         self.expr.typecheck()
 
         for p in self.parameters:
@@ -240,19 +258,40 @@ class FunctionExprCallStatement(Statement):
         self.return_type = self.expr.type[len(t + '->'):]
         self._type = 'void' if self.tail else self.return_type
 
+        tsa = [
+            'checkcast', self.ctx.constant_pull['java/lang/Integer class'], '',
+            'invokevirtual', self.ctx.constant_pull['unbox'], '',
+        ]
+
+        if '->' in self.return_type:
+            tsa = []
+
+        self.tail += tsa
+
     def resolve(self):
         params = []
 
         for n, param in enumerate(self.parameters):
+            tsa = [
+                'invokestatic', self.ctx.constant_pull['box'], '',
+            ]
+
+            if '->' in param.type:
+                tsa = [
+                    'nop', 'nop', 'nop',
+                ]
+
             params += [
                 'getstatic', self.ctx.constant_pull['args_st'], '',  # todo: update vars
                 'sipush', format(n, '04x'), '',
-            ] + param.seq
+            ] + param.seq + tsa
 
-        params += ['iastore'] * len(self.parameters)
+        params += [
+           'aastore',
+        ] * len(self.parameters)
 
         return self.expr.seq + params + [
-            'invokestatic', self.ctx.constant_pull['sw:(I)I'], '',
+            'invokestatic', self.ctx.constant_pull['call'], '',
         ] + self.tail
 
 
@@ -261,6 +300,7 @@ class ExpressionStatement(Statement):
         super().__init__(context, 'undefined', position)
         assert isinstance(expr, Statement)
         self.expr = expr
+        self._used = False
         self.tail = ['pop']
 
     def __len__(self):
@@ -268,11 +308,20 @@ class ExpressionStatement(Statement):
 
     def used(self):
         assert self.type == 'undefined'
-        self.tail = ['ireturn']
+        self._used = True
 
     def typecheck(self):
         self.expr.typecheck()
-        self._type = 'void' if self.tail else self.expr.type
+        self._type = 'void' if self._used else self.expr.type
+
+        if self._used:
+            if '->' not in self.expr.type:
+                self.tail = [
+                    'invokestatic', self.ctx.constant_pull['box'], '',
+                    'areturn'
+                ]
+            else:
+                self.tail = ['areturn']
 
     def resolve(self):
         return self.expr.seq + self.tail
@@ -302,9 +351,10 @@ class ReturnStatement(Statement):
         assert expr is None or isinstance(expr, Statement)
         self.expr = expr
         self.expected_return_type = self.vars.function_return_type
+        self._seq = None
 
     def __len__(self):
-        return (len(self.expr) if self.expr is not None else 3) + 1
+        return len(self._seq)
 
     def typecheck(self):
         if self.expr is not None:
@@ -319,16 +369,26 @@ class ReturnStatement(Statement):
 
         self._type = 'void'
 
-    def resolve(self):
         if self.expr:
-            return self.expr.seq + [
-                'ireturn'
+            tsa = [
+                'invokestatic', self.ctx.constant_pull['box'], '',
+            ]
+
+            if '->' in self.expr.type:
+                tsa = []
+
+            self._seq = self.expr.seq + tsa + [
+                'areturn'
             ]
         else:
-            return [
-                'sipush', '00', '00',
-                'ireturn'
+            self._seq = [
+                'iconst_0',
+                'invokestatic', self.ctx.constant_pull['box'], '',
+                'areturn'
             ]
+
+    def resolve(self):
+        return self._seq
 
 
 class PassStatement(Statement):
@@ -769,6 +829,7 @@ class ScopeStatement(Statement):
 
 class Variable:
     def __init__(self, cl, t, name, number, ctx):
+        self.function = '->' in t
         self.type = t
         self.name = name
         self.number = format(number, '04x')
@@ -776,20 +837,36 @@ class Variable:
         self.ctx = ctx
 
     def update(self):  # todo: update vars
+        tsa = [
+            'invokestatic', self.ctx.constant_pull['box'], '',
+        ]
+
+        if self.function:
+            tsa = []
+
         return [
             'aload_2',
             'swap',
             'sipush', self.number, '',
             'swap',
-            'iastore',
+        ] + tsa + [
+            'aastore',
         ]
 
     def resolve(self):  # todo: update vars
+        tsa = [
+            'checkcast', self.ctx.constant_pull['java/lang/Integer class'], '',
+            'invokevirtual', self.ctx.constant_pull['unbox'], '',
+        ]
+
+        if self.function:
+            tsa = []
+
         return [
             'aload_2',
             'sipush', self.number, '',
-            'iaload',
-        ]
+            'aaload',
+        ] + tsa
 
     @property
     def seq(self):
@@ -916,21 +993,22 @@ class Context:
         cp['String: stack'] = 'stack'
         cp['String: args_stack'] = 'args_stack'
 
-        cp['[I'] = '[I'
+        cp['[Ljava/lang/Object;'] = '[Ljava/lang/Object;'
+        cp['Ljava/lang/Object;'] = 'Ljava/lang/Object;'
+
+        cp.putClass('[Ljava/lang/Object; class', '[Ljava/lang/Object;')
+        cp.putClass('Ljava/lang/Object; class', 'Ljava/lang/Object;')
 
         cp['<clinit>'] = '<clinit>'
         cp['()V'] = '()V'
 
-        cp.putNameAndType('stack:[I', 'String: stack', '[I')
-        cp.putFieldref('st', 'this class', 'stack:[I')
+        cp.putNameAndType('stack:[Ljava/lang/Object;', 'String: stack', '[Ljava/lang/Object;')
+        cp.putFieldref('st', 'this class', 'stack:[Ljava/lang/Object;')
 
-        cp.putNameAndType('args_stack:[I', 'String: args_stack', '[I')
-        cp.putFieldref('args_st', 'this class', 'args_stack:[I')
+        cp.putNameAndType('args_stack:[Ljava/lang/Object;', 'String: args_stack', '[Ljava/lang/Object;')
+        cp.putFieldref('args_st', 'this class', 'args_stack:[Ljava/lang/Object;')
 
-        cp['sw'] = 'sw'
-        cp['(I)I'] = '(I)I'
-        cp.putNameAndType('sw(I)I', 'sw', '(I)I')
-        cp.putMethodref('sw:(I)I', 'this class', 'sw(I)I')
+        cp.createMethodRef('call', 'A.sw:(Ljava/lang/Object;)Ljava/lang/Object;')
 
         cp.createMethodRef('readInt', 'java/io/InputStream.read:()I')
 
@@ -944,14 +1022,13 @@ class Context:
 
     def push(self, t, function_return_type=None):
         self.variables = Variables(self, self.variables, t, function_return_type)
-        n = 0  # num of vars on this scope
 
     def pop(self):
         self.variables = self.variables.previous
 
     def build_functions_table(self):
         number_of_functions = len(self.functions)
-        full_bodies_length = sum(f.len + 3 for f in self.functions.values())
+        full_bodies_length = sum(f.len + 5 for f in self.functions.values())
 
         switch_size = 1 + 8 + number_of_functions * (4 + 4) + full_bodies_length
 
@@ -960,24 +1037,40 @@ class Context:
         for n, f in sorted((f.number, f) for f in self.functions.values()):
             table += format(n, '08x')
             table += format(number_of_functions * (4 + 4) + tmp_size, '08x')
-            tmp_size += f.len + 3
+            tmp_size += f.len + 5
 
         bodies = []
         tmp_size = full_bodies_length
         for n, f in sorted((f.number, f) for f in self.functions.values()):
-            tmp_size -= f.len + 3
+            tmp_size -= f.len + 5
             bodies += f.r()
-            bodies += ['bipush', '00', 'ireturn']
+            bodies += [
+                'iconst_0',
+                'invokestatic', self.constant_pull['box'], '',
+                'areturn',
+            ]
 
-        return [
+        return [] + [
             'getstatic', self.constant_pull['st'], '',
             'astore_2',
-            'nop', 'nop', 'iload_0',
+            'aload_0',
+
+            # 'checkcast', self.constant_pull['Ljava/lang/Object; class'], '',
+            'checkcast', self.constant_pull['[Ljava/lang/Object; class'], '',
+            'dup',
+            'iconst_0',
+            'aaload',
+            'checkcast', self.constant_pull['java/lang/Integer class'], '',
+            'invokevirtual', self.constant_pull['unbox'], '',
+
+            'nop', 'nop', 'nop', 'nop',
+            'nop', 'nop',
+
             'lookupswitch',
             format(switch_size, '08x'),      # def
             format(number_of_functions, '08x'),  # num of functions
             table,
         ] + bodies + [
-            'bipush', 'ff',
-            'ireturn',
+            'aconst_null',
+            'areturn',
         ]

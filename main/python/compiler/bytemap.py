@@ -275,7 +275,7 @@ class ConstantPull:
 
 
 class ByteCodeGenerator:
-    def __init__(self, context, instr, sseq='1000'):
+    def __init__(self, context, instr, sseq):
         self.ctx = context
         self.cp = self.ctx.constant_pull
         self.seq = processAsm([
@@ -297,7 +297,7 @@ class ByteCodeGenerator:
         code += format(len(self.cp), '04x')
         code += str(self.cp)
         code += '0021'  # access_flags
-        code += self.cp['this class']  # this_class
+        code += self.cp['A class']  # this_class
         code += self.cp['Object class']  # super_class
         code += '0000'  # interfaces_count
 
@@ -328,12 +328,13 @@ class ByteCodeGenerator:
 
         code += '001a'  # ACC_PRIVATE, ACC_STATIC, ACC_FINAL
         code += self.cp['String: stack']  # name: stack
-        code += self.cp['[I']  # type: [ I
+        code += self.cp['[Ljava/lang/Object;']  # type: [ Ljava/lang/Object;
+
         code += '0000'  # attributes_count
 
         code += '001a'  # ACC_PRIVATE, ACC_STATIC, ACC_FINAL
         code += self.cp['String: args_stack']  # name: stack
-        code += self.cp['[I']  # type: [ I
+        code += self.cp['[Ljava/lang/Object;']  # type: [ Ljava/lang/Object;
         code += '0000'  # attributes_count
         return code
 
@@ -351,11 +352,11 @@ class ByteCodeGenerator:
 
         seq = processAsm([
             'sipush', format(self.max_locals, '04x'),
-            'newarray', '0a',
+            'anewarray', self.cp['Object class'],
             'putstatic', self.cp['st'],
 
             'sipush', format(self.max_args, '04x'),
-            'newarray', '0a',
+            'anewarray', self.cp['Object class'],
             'putstatic', self.cp['args_st'],
 
             'return'
@@ -372,8 +373,8 @@ class ByteCodeGenerator:
 
     def _generate_switch_method(self):
         m = '000a'  # ACC_PRIVATE, ACC_STATIC
-        m += self.cp['sw']
-        m += self.cp['(I)I']
+        m += self.cp['sw string']
+        m += self.cp['(Ljava/lang/Object;)Ljava/lang/Object; type']
         m += '0001'  # attributes_count
 
         m += self.cp['code section']
