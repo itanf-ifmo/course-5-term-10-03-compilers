@@ -814,6 +814,10 @@ class ScopeStatement(Statement):
         self.body = body
         self.ctx.pop()
 
+    def optimize(self):
+        for b in self.body:
+            b.optimize()
+
     def __len__(self):
         return sum(len(i) for i in self.body)
 

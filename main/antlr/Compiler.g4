@@ -42,15 +42,11 @@ def parse(source, context):
     parser._listeners = [MyErrorListener(context)]
     parser.setContext(context)
 
-    bodies = parser.body().v
+    root = parser.root().v
+    root.typecheck()
+    root.optimize()
 
-    for b in bodies:
-        b.typecheck()
-
-    for b in bodies:
-        b.optimize()
-
-    return list(itertools.chain(*[i.seq for i in bodies if i is not None]))
+    return root.seq
 }
 
 expr returns [v]
@@ -128,6 +124,11 @@ body returns [v] locals [s = list()] :
 def_var returns [v]
     : varType ID          {$v = DeclareVariableStatement(self.context, $varType.v, $ID.text, ($ID.line, $ID.pos))}
     | varType ID '=' expr {$v = DeclareAndAssignVariableStatement(self.context, $varType.v, $ID.text, $expr.v, ($ID.line, $ID.pos))}
+    ;
+
+root returns [v] :
+                     {$v = ScopeStatement(self.context, (0, 0))}
+    body             {$v.build($body.v)}
     ;
 
 scope returns [v] :
