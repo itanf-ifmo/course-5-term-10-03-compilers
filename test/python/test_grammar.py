@@ -437,9 +437,6 @@ class TestIfCondition(unittest.TestCase):
     def test_one(self):
         self.base('if 1 true >> else false >>', 'true')
 
-    def test_declare_var_in_condition(self):
-        self.assertRaisesRegex(objects.ParseError, 'no viable alternative at input', _compiler, 'if false int a = 1')
-
     def test_set_var_in_if(self):
         self.base('int a = 1; a>>; if a - 1 {a = 4; 1>>} else {a = 3; 2>>}; a>>', '1 2 3')
 
@@ -637,6 +634,13 @@ class TestFunctions(unittest.TestCase):
     def test_param_name_are_same(self):
         self.base('void a(int a) {a >>}; a(1);', '1')
 
+    def test_return_void1(self):
+        self.base('''
+        void a() {
+          return;
+        };
+        ''', '')
+
     def test_return_void(self):
         self.base('''
         void a() {
@@ -785,6 +789,13 @@ class TestHigherOrderFunctions(unittest.TestCase):
         h(f, -2);
 
         ''', '7 -1 6 -2')
+
+    def test_as_param1(self):
+        self.base('''
+        void h(()->void a) {
+          a()
+        };
+        ''', '')
 
     def test_return_func(self):
         self.base('''
@@ -940,7 +951,18 @@ class TestClosure(unittest.TestCase):
         b();
         a();
         b();
-        ''', '8 16 34 70 142')  # todo should be 8 18 16 38 34
+        ''', '8 18 16 38 34')
+
+    def test_scope_2(self):
+        self.base('''
+        ()->void f(int n) {
+          return void () { n >> };
+        };
+
+        ()->void a = f(3);
+        ()->void b = f(7);
+        a();
+        ''', '3')
 
 
 class TestLambda(unittest.TestCase):

@@ -205,7 +205,7 @@ class FunctionStatement(Statement):
 
     def r(self):
         return [
-            'sipush', format(len(self.vars.current_scope) + 1, '04x'), '',  # todo: wrong length
+            'sipush', format(len(self.vars) + 1, '04x'), '',
             'anewarray', self.ctx.constant_pull['Object class'], '',
             'dup',
             'iconst_0',
@@ -826,7 +826,7 @@ class ScopeStatement(Statement):
 
     def resolve(self):
         return [
-            'sipush', format(len(self.vars.current_scope) + 1, '04x'), '',  # todo: wrong length
+            'sipush', format(len(self.vars) + 1, '04x'), '',
             'anewarray', self.ctx.constant_pull['Object class'], '',
             'dup',
 
@@ -851,8 +851,29 @@ class Variable:
         self.number = format(number, '04x')
         self.closure = cl
         self.ctx = ctx
+        self.depth = None
 
-    def update(self):  # todo: update vars
+    def start(self):
+        self.depth = 0
+        return self
+
+    def pop(self):
+        self.depth += 1
+        return self
+
+    @property
+    def build_context(self):
+        return [
+            'aload_0'
+        ] + [
+            'iconst_0',
+            'aaload',
+            'checkcast', self.ctx.constant_pull['[Ljava/lang/Object; class'], '',
+        ] * self.depth
+
+    def update(self):
+        ctx = self.build_context
+
         tsa = [
             'invokestatic', self.ctx.constant_pull['box'], '',
         ]
@@ -860,8 +881,7 @@ class Variable:
         if self.function:
             tsa = []
 
-        return [
-            'aload_2',
+        return ctx + [
             'swap',
             'sipush', self.number, '',
             'swap',
@@ -869,7 +889,9 @@ class Variable:
             'aastore',
         ]
 
-    def resolve(self):  # todo: update vars
+    def resolve(self):
+        ctx = self.build_context
+
         tsa = [
             'checkcast', self.ctx.constant_pull['java/lang/Integer class'], '',
             'invokevirtual', self.ctx.constant_pull['unbox'], '',
@@ -878,8 +900,7 @@ class Variable:
         if self.function:
             tsa = []
 
-        return [
-            'aload_2',
+        return ctx + [
             'sipush', self.number, '',
             'aaload',
         ] + tsa
@@ -888,18 +909,13 @@ class Variable:
     def seq(self):
         return self.resolve()
 
-    @property
-    def is_global(self):
-        return self.closure.is_global
-
-    def __str__(self):
-        return "({}) {} : {}".format(self.number, self.type, self.name)
-
 
 class Variables:
     def __init__(self, context, previous, s, function_return_type):
         self._previous = previous
-        self._current = {}
+        self._current = {
+            None: None
+        }
         self._context = context
         self._s = s
         self._function_return_type = function_return_type
@@ -909,25 +925,12 @@ class Variables:
         return self._current
 
     def new(self, name, t):
-        self._current[name] = Variable(self, t, name, self._context.vars_number, self._context)
-        self._context.vars_number += 1
-        return self._current[name]
-
-    @property
-    def is_global(self):
-        return self._previous is None
-
-    @property
-    def number_of_non_global_vars(self):
-        return 0 if self.is_global else (len(self._current) + self._previous.number_of_non_global_vars)
+        self._current[name] = Variable(self, t, name, len(self), self._context)
+        return self[name]
 
     @property
     def previous(self):
         return self._previous
-
-    @property
-    def full_len(self):
-        return self._context.vars_number
 
     @property
     def function_return_type(self):
@@ -940,10 +943,7 @@ class Variables:
         return self._previous.function_return_type
 
     def __len__(self):
-        if self._s == 'f':
-            return len(self._current)
-
-        return (0 if self._previous is None else len(self._previous)) + len(self._current)
+        return len(self._current)
 
     def __contains__(self, item):
         if item in self._current:
@@ -956,16 +956,12 @@ class Variables:
 
     def __getitem__(self, item):
         if item in self._current:
-            return self._current[item]
+            return self._current[item].start()
 
         if self._previous is None:
             return None
 
-        return self._previous[item]
-
-    def __str__(self):
-        return '------ ' + self._s + ' ------\n' + '\n'.join(str(x) for x in self._current.values()) +\
-               ('\n' + str(self._previous) if self._previous is not None else '') + '\n============\n'
+        return self._previous[item].pop()
 
 
 class Context:
@@ -976,7 +972,6 @@ class Context:
         self.constant_pull = self._generate_constant_pull()
         self.variables = Variables(self, None, 'g', None)
         self.functions = dict()
-        self.vars_number = 0
         self.max_arguments = 0
 
     def _generate_constant_pull(self):
@@ -1067,11 +1062,8 @@ class Context:
             ]
 
         return [] + [
-            'getstatic', self.constant_pull['st'], '',
-            'astore_2',
             'aload_0',
 
-            # 'checkcast', self.constant_pull['Ljava/lang/Object; class'], '',
             'checkcast', self.constant_pull['[Ljava/lang/Object; class'], '',
             'dup',
             'iconst_0',
@@ -1083,10 +1075,10 @@ class Context:
             'aaload',
             'astore_0',
 
-            'nop', 'nop',
+            'nop', 'nop', 'nop', 'nop', 'nop', 'nop',
 
             'lookupswitch',
-            format(switch_size, '08x'),      # def
+            format(switch_size, '08x'),          # def
             format(number_of_functions, '08x'),  # num of functions
             table,
         ] + bodies + [

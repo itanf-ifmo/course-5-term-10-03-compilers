@@ -215,10 +215,7 @@ class ConstantPull:
         if isinstance(value, str):
             v = '01{}{}'.format(format(len(value), '04x'), ''.join(format(i, '02x') for i in value.encode()))
         elif isinstance(value, int):
-            if value < 0:
-                v = '03' + format(256 * 256 * 256 * 256 + value, '08x')
-            else:
-                v = '03' + format(value, '08x')
+            v = '03' + format(value, '08x')
         else:
             v = format(value[0], '02x') + ''.join(i for i in value[1:])
 
@@ -281,12 +278,9 @@ class ByteCodeGenerator:
         self.seq = processAsm([
             'aconst_null',
             'astore_0',
-            'getstatic', self.cp['st'], '',
-            'astore_2',
         ]) + instr + 'b1'
         self.sseq = sseq
         self.max_stack = 1000
-        self.max_locals = self.ctx.vars_number
         self.max_args = self.ctx.max_arguments
 
     def generate(self):
@@ -324,14 +318,7 @@ class ByteCodeGenerator:
         return [int(i + j, 16) for i, j in list(zip(code[::2], code[1::2]))]
 
     def _generate_fields(self):
-        code = '0002'  # fields_count
-
-        code += '001a'  # ACC_PRIVATE, ACC_STATIC, ACC_FINAL
-        code += self.cp['String: stack']  # name: stack
-        code += self.cp['[Ljava/lang/Object;']  # type: [ Ljava/lang/Object;
-
-        code += '0000'  # attributes_count
-
+        code = '0001'  # fields_count
         code += '001a'  # ACC_PRIVATE, ACC_STATIC, ACC_FINAL
         code += self.cp['String: args_stack']  # name: stack
         code += self.cp['[Ljava/lang/Object;']  # type: [ Ljava/lang/Object;
@@ -351,13 +338,9 @@ class ByteCodeGenerator:
         code += format(0, '04x')
 
         seq = processAsm([
-            'sipush', format(self.max_locals, '04x'),
-            'anewarray', self.cp['Object class'],
-            'putstatic', self.cp['st'],
-
-            'sipush', format(self.max_args, '04x'),
-            'anewarray', self.cp['Object class'],
-            'putstatic', self.cp['args_st'],
+            'sipush', format(self.max_args, '04x'), '',
+            'anewarray', self.cp['Object class'], '',
+            'putstatic', self.cp['args_st'], '',
 
             'return'
         ])
