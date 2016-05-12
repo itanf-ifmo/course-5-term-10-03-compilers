@@ -3,6 +3,7 @@ from subprocess import Popen, PIPE
 import unittest
 
 from compiler.settings import *
+# noinspection PyProtectedMember
 from compiler import _compiler, objects, build
 
 
@@ -61,7 +62,8 @@ class TestBooleans(unittest.TestCase):
         self.base('! -1 >>', 'true')
 
     def test_minus_true(self):
-        self.assertRaisesRegex(objects.CompileError, 'Unexpected unary operator for boolean expression: -', _compiler, '- true >>')
+        msg = 'Unexpected unary operator for boolean expression: -'
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, '- true >>')
 
     def test_true_or_true(self):
         self.base('true or true >>', 'true')
@@ -121,7 +123,8 @@ class TestBooleans(unittest.TestCase):
         self.base('true or false and true >>', 'true')
 
     def test_true_plus_true(self):
-        self.assertRaisesRegex(objects.CompileError, 'Unexpected operator for boolean parameters: +', _compiler, 'true + true >>')
+        msg = 'Unexpected operator for boolean parameters: +'
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'true + true >>')
 
 
 class TestBasics(unittest.TestCase):
@@ -259,7 +262,8 @@ class TestComparison(unittest.TestCase):
         self.base('2 <= 2 >>', 'true')
 
     def test_true_le_two(self):
-        self.assertRaisesRegex(objects.CompileError, 'Type of operand mismatches: bool <= int', _compiler, 'true <= 2 >>')
+        msg = 'Type of operand mismatches: bool <= int'
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'true <= 2 >>')
 
     def test_true_le_true(self):
         self.base('true <= true >>', 'true')
@@ -290,8 +294,8 @@ class TestVariables(unittest.TestCase):
     def test_int_aa3dfD22_3132313sfc(self):
         self.base('int aa3dfD22_3132313sfc = 1; aa3dfD22_3132313sfc>>', '1')
 
-    # def test_use_before_declare(self):
-    #     self.base('a = 1; int a; a>>', '1')
+    def test_use_before_declare(self):
+        self.base('a = 1; int a; a>>', '1')
 
     def test_declare_and_define(self):
         self.base('int a = 1; a>>', '1')
@@ -353,6 +357,18 @@ class TestVariables(unittest.TestCase):
 
         a + b >>;
         ''', '3 3 12 3 12 36 12 3')
+
+    def test_already_declared2(self):
+        msg = 'Variable a already defined in this scope'
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'int a; bool a = false')
+
+    def test_already_declared3(self):
+        msg = 'Type int of variable a doesn\'t matches expression type bool'
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'int a = false')
+
+    def test_assign_not_defined(self):
+        msg = 'Variable a is not defined'
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'a = false')
 
 
 class TestScope(unittest.TestCase):
@@ -535,15 +551,9 @@ class TestFunctions(unittest.TestCase):
     def test_more_functions(self):
         self.base('void a() {1>>}; int b() {2>>}; bool c() {3>>}; a() ; b() ; c();', '1 2 3')
 
-    # def test_overloading(self):  # temporary disabled
-    #     self.base('void a() {1>>}; int a(int c) {2>>}; a() ; a(1)', '1 2')
-
     def test_duplicate(self):
         msg = 'Error: function\(or variable\) with name a already defined'
         self.assertRaisesRegex(objects.CompileError, msg, _compiler, 'void a() {}; int a() {}')
-
-    # def test_same_name_as_variable(self):  # temporary disabled
-    #     self.base('int a = 0; void a(){ a >> }; a(); a = a + 1; a>>', '0 1')
 
     def test_scope_var(self):
         self.base('void f() { int a }; int a', '')
@@ -1029,6 +1039,14 @@ class TestRead(unittest.TestCase):
 
     def test_read_two_bools(self):
         self.base('bool a; bool b; >> a; >>b; a>>; b>>', 'true false', ' t f ')
+
+    def test_read_to_undefined(self):
+        msg = 'Variable\(or function\) a is not defined at'
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, '>> a')
+
+    def test_read_to_func_var(self):
+        msg = 'Could not read variable of type \(\)\-\>void at'
+        self.assertRaisesRegex(objects.CompileError, msg, _compiler, '()->void a; >> a')
 
 
 class BigTests(unittest.TestCase):

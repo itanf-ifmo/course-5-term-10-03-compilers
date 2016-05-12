@@ -36,7 +36,7 @@ class Statement:
         return []
 
     def optimize(self):
-        pass
+        raise self.exception('not optimize')
 
     @property
     def seq(self):
@@ -76,6 +76,9 @@ class SpecialStatement(Statement):
 
     def typecheck(self):
         self._type = 'void'
+
+    def optimize(self):
+        pass
 
     def resolve(self):
         return self._seq
@@ -279,6 +282,10 @@ class FunctionExprCallStatement(Statement):
 
         self.tail += tsa
 
+    def optimize(self):
+        for p in self.parameters:
+            p.optimize()
+
     def resolve(self):
         params = []
 
@@ -334,6 +341,9 @@ class ExpressionStatement(Statement):
             else:
                 self.tail = ['areturn']
 
+    def optimize(self):
+        self.expr.optimize()
+
     def resolve(self):
         return self.expr.seq + self.tail
 
@@ -349,6 +359,9 @@ class BoolStatement(Statement):
 
     def typecheck(self):
         self._type = 'bool'
+
+    def optimize(self):
+        pass
 
     def resolve(self):
         return [
@@ -398,6 +411,10 @@ class ReturnStatement(Statement):
                 'areturn'
             ]
 
+    def optimize(self):
+        if self.expr is not None:
+            self.expr.optimize()
+
     def resolve(self):
         return self._seq
 
@@ -411,6 +428,9 @@ class PassStatement(Statement):
 
     def typecheck(self):
         self._type = 'void'
+
+    def optimize(self):
+        pass
 
     def resolve(self):
         return [
@@ -434,6 +454,9 @@ class PrintStatement(Statement):
             raise self.exception('could not print void')
 
         self._type = 'void'
+
+    def optimize(self):
+        self.expr.optimize()
 
     def resolve(self):
         return [
@@ -526,6 +549,9 @@ class ReadStatement(Statement):
 
         self._type = 'void'
 
+    def optimize(self):
+        pass
+
     def resolve(self):
         return self._seq + self.update_seq
 
@@ -583,6 +609,10 @@ class OperatorStatement(Statement):
         if self.left.type == 'bool' and self.op not in self.RETURNS_BOOLEAN:
             raise self.exception("Unexpected operator for boolean parameters: {}".format(self.op))
 
+    def optimize(self):
+        self.left.optimize()
+        self.right.optimize()
+
     def resolve(self):
         return self.left.seq + \
                self.right.seq + \
@@ -616,6 +646,9 @@ class UnaryOperatorStatement(Statement):
         if self.expr.type == 'bool' and self.op not in self.BOOLEAN_UNARY_OPERATORS:
             raise self.exception("Unexpected unary operator for boolean expression: {}".format(self.op))
 
+    def optimize(self):
+        self.expr.optimize()
+
     def resolve(self):
         return self.expr.seq + \
                self.op_seq
@@ -632,6 +665,9 @@ class ConstIntStatement(Statement):
 
     def __len__(self):
         return 3
+
+    def optimize(self):
+        pass
 
     def resolve(self):
         self.ctx.constant_pull['constant_' + str(self.i)] = self.i
@@ -659,6 +695,9 @@ class DeclareVariableStatement(Statement):
     def typecheck(self):
         self._type = 'void'
 
+    def optimize(self):
+        pass
+
     def resolve(self):
         return []
 
@@ -681,6 +720,9 @@ class GetVariableStatement(Statement):
 
         self._type = self.variable.type
         self._seq = self.variable.seq
+
+    def optimize(self):
+        pass
 
     def resolve(self):
         return self._seq
@@ -713,6 +755,9 @@ class AssignVariableStatement(Statement):
         self._seq = self.variable.update()
         self._type = 'void'
 
+    def optimize(self):
+        self.expr.optimize()
+
     def resolve(self):
         return self.expr.seq + \
                self._seq
@@ -744,6 +789,9 @@ class DeclareAndAssignVariableStatement(Statement):
 
         self._type = 'void'
 
+    def optimize(self):
+        self.expr.optimize()
+
     def resolve(self):
         return self.expr.seq + \
                self._seq
@@ -772,6 +820,13 @@ class IfStatement(Statement):
 
         self._type = 'void'
         self.ts, self.fs = len(self.true_seq), (len(self.false_seq) if self.false_seq is not None else 0)
+
+    def optimize(self):
+        self.expr.optimize()
+        self.true_seq.optimize()
+
+        if self.false_seq is not None:
+            self.false_seq.optimize()
 
     def resolve(self):
         return self.expr.seq + [
@@ -804,6 +859,10 @@ class WhileStatement(Statement):
         self.expr_size = len(self.expr)
         self._type = 'void'
 
+    def optimize(self):
+        self.expr.optimize()
+        self._seq.optimize()
+
     def resolve(self):
         return self.expr.seq + [
             'ifeq',
@@ -825,10 +884,6 @@ class ScopeStatement(Statement):
         self.body = body
         self.ctx.pop()
 
-    def optimize(self):
-        for b in self.body:
-            b.optimize()
-
     def __len__(self):
         return 11 + sum(len(i) for i in self.body) + 7
 
@@ -837,6 +892,10 @@ class ScopeStatement(Statement):
             i.typecheck()
 
         self._type = 'void'
+
+    def optimize(self):
+        for b in self.body:
+            b.optimize()
 
     def resolve(self):
         return [
