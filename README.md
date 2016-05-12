@@ -1,4 +1,4 @@
-## Compiler to JVM: High-order functions + lambda functions + closures(partly) + tail recursion optimization
+## Compiler to JVM: High-order functions + lambda functions + closures + tail recursion optimization
 [![Build Status](https://travis-ci.org/itanf-ifmo/course-5-term-10-03-compilers.svg?branch=master)](https://travis-ci.org/itanf-ifmo/course-5-term-10-03-compilers)
 
 #### Features

@@ -205,17 +205,14 @@ g();
 # v is 15 here
 
 
-# this example will work in unexpected way:
+# other example:
 ()->void f(int n) {
-  void a() { n = n + 1 };
-
-  return ()->void(()->void b, ()->void a){ void(){b(); a(); n>>} }(a, void(){ n = n * 2 });
+  return void () { n >> };
 };
 
 ()->void a = f(3);
-a();  # will print 8
 ()->void b = f(7);
-a();  # will print 16 when expected is 18
+a();  # here will be 3
 ```
 
 #### Tail recursion optimization
