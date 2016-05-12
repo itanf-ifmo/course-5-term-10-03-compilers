@@ -175,20 +175,34 @@ class FunctionStatement(Statement):
                 i.expr.expr.variable.function and \
                 i.expr.expr.variable.function is self:
 
-            params = sum([param.seq for param in i.expr.parameters[::-1]], [])
-            params += sum([self.vars[param_name].update() for param_type, param_name in self.parameters], [])
-            # todo: update vars: create new ctx
+            params_build = sum([param.seq for param in i.expr.parameters[::-1]], [])
+
+            create_new_scope = [
+                'sipush', format(len(self.vars), '04x'), '',
+                'anewarray', self.ctx.constant_pull['Object class'], '',
+                'dup',
+                'iconst_0',
+                'aload_0',
+                'iconst_0',
+                'aaload',
+                'aastore',
+                'astore_0',
+            ]
+
+            params_store = sum([self.vars[param_name].update() for param_type, param_name in self.parameters], [])
 
             label_uuid = str(uuid.uuid1())
 
-            s = params + [
-                'goto', '#TRO-%s' % label_uuid, '',
+            self.body = [
+                self.body[0],
+                SpecialStatement(self.ctx, self.vars, [
+                    ':TRO-%s' % label_uuid
+                ])
+            ] + self.body[1:][:-1] + [
+                SpecialStatement(self.ctx, self.vars, params_build + create_new_scope + params_store + [
+                    'goto', '#TRO-%s' % label_uuid, '',
+                ])
             ]
-
-            self.body = \
-                [self.body[0], SpecialStatement(self.ctx, self.vars, [':TRO-%s' % label_uuid])] +\
-                self.body[1:][:-1] +\
-                [SpecialStatement(self.ctx, self.vars, s)]
 
     def __len__(self):
         return len(self._seq)
@@ -205,7 +219,7 @@ class FunctionStatement(Statement):
 
     def r(self):
         return [
-            'sipush', format(len(self.vars) + 1, '04x'), '',
+            'sipush', format(len(self.vars), '04x'), '',
             'anewarray', self.ctx.constant_pull['Object class'], '',
             'dup',
             'iconst_0',
@@ -826,7 +840,7 @@ class ScopeStatement(Statement):
 
     def resolve(self):
         return [
-            'sipush', format(len(self.vars) + 1, '04x'), '',
+            'sipush', format(len(self.vars), '04x'), '',
             'anewarray', self.ctx.constant_pull['Object class'], '',
             'dup',
 
