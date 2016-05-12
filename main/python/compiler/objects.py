@@ -109,8 +109,10 @@ class FunctionStatement(Statement):
             'sipush', format(self.number, '04x'), '',
             'invokestatic', self.ctx.constant_pull['box'], '',
             'aastore',
-
-            # todo store ctx
+            'dup',
+            'iconst_1',
+            'aload_0',
+            'aastore',
         ]
 
         if not self.lambda_f:
@@ -151,7 +153,7 @@ class FunctionStatement(Statement):
                 tsa = []
 
             params += [
-                'getstatic', self.ctx.constant_pull['args_st'], '',  # todo: update vars
+                'getstatic', self.ctx.constant_pull['args_st'], '',
                 'sipush', format(n, '04x'), '',
                 'aaload',
             ] + tsa + self.vars[self.parameters[n][1]].update()
@@ -175,7 +177,7 @@ class FunctionStatement(Statement):
 
             params = sum([param.seq for param in i.expr.parameters[::-1]], [])
             params += sum([self.vars[param_name].update() for param_type, param_name in self.parameters], [])
-            # todo: update vars
+            # todo: update vars: create new ctx
 
             label_uuid = str(uuid.uuid1())
 
@@ -193,7 +195,7 @@ class FunctionStatement(Statement):
 
     @property
     def len(self):
-        return sum(len(i) for i in self.body)
+        return 11 + sum(len(i) for i in self.body)
 
     def typecheck(self):
         for i in self.body:
@@ -203,19 +205,14 @@ class FunctionStatement(Statement):
 
     def r(self):
         return [
-            # 'sipush', format(len(self.vars.current_scope), '04x'), '',
-            # 'anewarray', self.ctx.constant_pull['Object class'], '',
-            # 'dup',
-            # 'bipush', '00',
-            # 'aload_2',
-            # 'aastore',
-            # 'astore_2',
-        ] + list(itertools.chain(*[i.seq for i in self.body])) + [
-            # 'aload_2',
-            # 'bipush', '00',
-            # 'aaload',
-            # 'astore_2',
-        ]
+            'sipush', format(len(self.vars.current_scope) + 1, '04x'), '',  # todo: wrong length
+            'anewarray', self.ctx.constant_pull['Object class'], '',
+            'dup',
+            'iconst_0',
+            'aload_0',
+            'aastore',
+            'astore_0',
+        ] + list(itertools.chain(*[i.seq for i in self.body]))
 
     def resolve(self):
         return self._seq
@@ -282,7 +279,7 @@ class FunctionExprCallStatement(Statement):
                 ]
 
             params += [
-                'getstatic', self.ctx.constant_pull['args_st'], '',  # todo: update vars
+                'getstatic', self.ctx.constant_pull['args_st'], '',
                 'sipush', format(n, '04x'), '',
             ] + param.seq + tsa
 
@@ -819,7 +816,7 @@ class ScopeStatement(Statement):
             b.optimize()
 
     def __len__(self):
-        return sum(len(i) for i in self.body)
+        return 11 + sum(len(i) for i in self.body) + 7
 
     def typecheck(self):
         for i in self.body:
@@ -828,7 +825,22 @@ class ScopeStatement(Statement):
         self._type = 'void'
 
     def resolve(self):
-        return list(itertools.chain(*[i.seq for i in self.body]))
+        return [
+            'sipush', format(len(self.vars.current_scope) + 1, '04x'), '',  # todo: wrong length
+            'anewarray', self.ctx.constant_pull['Object class'], '',
+            'dup',
+
+            'iconst_0',
+            'aload_0',
+            'aastore',
+            'astore_0',
+        ] + list(itertools.chain(*[i.seq for i in self.body])) + [
+            'aload_0',
+            'iconst_0',
+            'aaload',
+            'checkcast', self.ctx.constant_pull['[Ljava/lang/Object; class'], '',
+            'astore_0',
+        ]
 
 
 class Variable:
@@ -1066,8 +1078,11 @@ class Context:
             'aaload',
             'checkcast', self.constant_pull['java/lang/Integer class'], '',
             'invokevirtual', self.constant_pull['unbox'], '',
+            'swap',
+            'iconst_1',
+            'aaload',
+            'astore_0',
 
-            'nop', 'nop', 'nop', 'nop',
             'nop', 'nop',
 
             'lookupswitch',

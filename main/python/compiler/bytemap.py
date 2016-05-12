@@ -279,8 +279,8 @@ class ByteCodeGenerator:
         self.ctx = context
         self.cp = self.ctx.constant_pull
         self.seq = processAsm([
-            'sipush', '00', '00',
-            'istore_1',
+            'aconst_null',
+            'astore_0',
             'getstatic', self.cp['st'], '',
             'astore_2',
         ]) + instr + 'b1'
